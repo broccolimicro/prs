@@ -41,11 +41,10 @@ struct production_rule_set
 struct term_index
 {
 	term_index();
-	term_index(int index, int guard, int term);
+	term_index(int index, int term);
 	~term_index();
 
 	int index;
-	int guard;
 	int term;
 
 	string to_string(const production_rule_set &g, const boolean::variable_set &v);

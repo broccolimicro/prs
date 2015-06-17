@@ -14,30 +14,40 @@
 
 namespace prs
 {
-	struct instability
+	struct enabled_rule : term_index
 	{
-		instability();
-		instability(term_index effect, vector<term_index> cause);
-		~instability();
-
-		term_index effect;
-		vector<term_index> cause;
+		vector<term_index> history;
+		boolean::cube local_action;
+		boolean::cube remote_action;
+		boolean::cube guard;
+		bool stable;
 
 		string to_string(const production_rule_set &base, const boolean::variable_set &v);
 	};
 
-	bool operator<(instability i, instability j);
-	bool operator>(instability i, instability j);
-	bool operator<=(instability i, instability j);
-	bool operator>=(instability i, instability j);
-	bool operator==(instability i, instability j);
-	bool operator!=(instability i, instability j);
+	struct instability : enabled_rule
+	{
+		instability();
+		instability(const enabled_rule &cause);
+		~instability();
 
-	struct interference : pair<term_index, term_index>
+		string to_string(const production_rule_set &base, const boolean::variable_set &v);
+	};
+
+	struct interference : pair<enabled_rule, enabled_rule>
 	{
 		interference();
-		interference(term_index first, term_index second);
+		interference(const enabled_rule &first, const enabled_rule &second);
 		~interference();
+
+		string to_string(const production_rule_set &base, const boolean::variable_set &v);
+	};
+
+	struct mutex : pair<enabled_rule, enabled_rule>
+	{
+		mutex();
+		mutex(const enabled_rule &first, const enabled_rule &second);
+		~mutex();
 
 		string to_string(const production_rule_set &base, const boolean::variable_set &v);
 	};
@@ -48,18 +58,24 @@ namespace prs
 		simulator(const production_rule_set *base, const boolean::variable_set *variables);
 		~simulator();
 
-		vector<instability> unstable;
-		vector<interference> interfering;
+		vector<instability> instability_errors;
+		vector<interference> interference_errors;
+		vector<mutex> mutex_errors;
 
-		vector<term_index> ready;
+		vector<enabled_rule> ready;
+		vector<enabled_rule> firing;
+		term_index last;
 
 		boolean::cube encoding;
+		boolean::cube global;
 
 		const production_rule_set *base;
 		const boolean::variable_set *variables;
 
 		int enabled();
 		boolean::cube fire(int index);
+
+		void reset();
 	};
 }
 
