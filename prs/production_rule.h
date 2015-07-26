@@ -7,7 +7,7 @@
 
 #include <common/standard.h>
 #include <boolean/cover.h>
-#include <boolean/variable.h>
+#include <ucs/variable.h>
 
 #ifndef prs_production_rule_h
 #define prs_production_rule_h
@@ -32,7 +32,7 @@ struct production_rule_set
 
 	vector<production_rule> rules;
 
-	void post_process(const boolean::variable_set &variables);
+	void post_process(const ucs::variable_set &variables);
 };
 
 /* This points to the cube 'term' in the action of transition 'index' in a graph.
@@ -47,7 +47,7 @@ struct term_index
 	int index;
 	int term;
 
-	string to_string(const production_rule_set &g, const boolean::variable_set &v);
+	string to_string(const production_rule_set &g, const ucs::variable_set &v);
 };
 
 bool operator<(term_index i, term_index j);

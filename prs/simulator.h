@@ -6,7 +6,7 @@
  */
 
 #include "production_rule.h"
-#include <boolean/variable.h>
+#include <ucs/variable.h>
 #include <common/standard.h>
 
 #ifndef prs_simulator_h
@@ -22,7 +22,7 @@ namespace prs
 		boolean::cube guard;
 		bool stable;
 
-		string to_string(const production_rule_set &base, const boolean::variable_set &v);
+		string to_string(const production_rule_set &base, const ucs::variable_set &v);
 	};
 
 	struct instability : enabled_rule
@@ -31,7 +31,7 @@ namespace prs
 		instability(const enabled_rule &cause);
 		~instability();
 
-		string to_string(const production_rule_set &base, const boolean::variable_set &v);
+		string to_string(const production_rule_set &base, const ucs::variable_set &v);
 	};
 
 	struct interference : pair<enabled_rule, enabled_rule>
@@ -40,7 +40,7 @@ namespace prs
 		interference(const enabled_rule &first, const enabled_rule &second);
 		~interference();
 
-		string to_string(const production_rule_set &base, const boolean::variable_set &v);
+		string to_string(const production_rule_set &base, const ucs::variable_set &v);
 	};
 
 	struct mutex : pair<enabled_rule, enabled_rule>
@@ -49,13 +49,13 @@ namespace prs
 		mutex(const enabled_rule &first, const enabled_rule &second);
 		~mutex();
 
-		string to_string(const production_rule_set &base, const boolean::variable_set &v);
+		string to_string(const production_rule_set &base, const ucs::variable_set &v);
 	};
 
 	struct simulator
 	{
 		simulator();
-		simulator(const production_rule_set *base, const boolean::variable_set *variables);
+		simulator(const production_rule_set *base, const ucs::variable_set *variables);
 		~simulator();
 
 		vector<instability> instability_errors;
@@ -70,7 +70,7 @@ namespace prs
 		boolean::cube global;
 
 		const production_rule_set *base;
-		const boolean::variable_set *variables;
+		const ucs::variable_set *variables;
 
 		int enabled();
 		boolean::cube fire(int index);

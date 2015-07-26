@@ -29,10 +29,10 @@ production_rule_set::~production_rule_set()
 
 }
 
-void production_rule_set::post_process(const boolean::variable_set &variables)
+void production_rule_set::post_process(const ucs::variable_set &variables)
 {
 	for (int i = 0; i < (int)rules.size(); i++)
-		rules[i].remote_action = variables.remote(rules[i].local_action);
+		rules[i].remote_action = rules[i].local_action.remote(variables.get_groups());
 }
 
 term_index::term_index()
@@ -52,9 +52,9 @@ term_index::~term_index()
 
 }
 
-string term_index::to_string(const production_rule_set &prs, const boolean::variable_set &v)
+string term_index::to_string(const production_rule_set &prs, const ucs::variable_set &v)
 {
-	return "T" + ::to_string(index) + "." + ::to_string(term) + ":" + export_assignment(prs.rules[index].local_action.cubes[term], v).to_string();
+	return "T" + ::to_string(index) + "." + ::to_string(term) + ":" + export_composition(prs.rules[index].local_action.cubes[term], v).to_string();
 }
 
 bool operator<(term_index i, term_index j)

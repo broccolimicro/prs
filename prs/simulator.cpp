@@ -12,15 +12,15 @@
 namespace prs
 {
 
-string enabled_rule::to_string(const production_rule_set &base, const boolean::variable_set &v)
+string enabled_rule::to_string(const production_rule_set &base, const ucs::variable_set &v)
 {
 	string result;
-	result = export_guard(guard, v).to_string();
+	result = export_expression(guard, v).to_string();
 	if (stable)
 		result += "->";
 	else
 		result += "~>";
-	result += export_assignment(base.rules[index].local_action.cubes[term], v).to_string();
+	result += export_composition(base.rules[index].local_action.cubes[term], v).to_string();
 	return result;
 }
 
@@ -71,7 +71,7 @@ instability::~instability()
 
 }
 
-string instability::to_string(const production_rule_set &base, const boolean::variable_set &v)
+string instability::to_string(const production_rule_set &base, const ucs::variable_set &v)
 {
 	string result = "unstable rule " + enabled_rule::to_string(base, v);
 
@@ -114,7 +114,7 @@ interference::~interference()
 
 }
 
-string interference::to_string(const production_rule_set &base, const boolean::variable_set &v)
+string interference::to_string(const production_rule_set &base, const ucs::variable_set &v)
 {
 	if (!first.stable || !second.stable)
 		return "weakly interfering rules " + first.to_string(base, v) + " and " + second.to_string(base, v);
@@ -145,7 +145,7 @@ mutex::~mutex()
 
 }
 
-string mutex::to_string(const production_rule_set &base, const boolean::variable_set &v)
+string mutex::to_string(const production_rule_set &base, const ucs::variable_set &v)
 {
 	return "vacuous firings break mutual exclusion for rules " + first.to_string(base, v) + " and " + second.to_string(base, v);
 }
@@ -156,12 +156,12 @@ simulator::simulator()
 	variables = NULL;
 }
 
-simulator::simulator(const production_rule_set *base, const boolean::variable_set *variables)
+simulator::simulator(const production_rule_set *base, const ucs::variable_set *variables)
 {
 	this->base = base;
 	this->variables = variables;
 	if (variables != NULL)
-		for (int i = 0; i < (int)variables->variables.size(); i++)
+		for (int i = 0; i < (int)variables->nodes.size(); i++)
 		{
 			global.set(i, -1);
 			encoding.set(i, -1);
@@ -340,7 +340,7 @@ boolean::cube simulator::fire(int index)
 
 void simulator::reset()
 {
-	for (int i = 0; i < (int)variables->variables.size(); i++)
+	for (int i = 0; i < (int)variables->nodes.size(); i++)
 	{
 		global.set(i, -1);
 		encoding.set(i, -1);
