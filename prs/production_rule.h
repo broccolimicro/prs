@@ -32,6 +32,11 @@ struct production_rule_set
 
 	vector<production_rule> rules;
 
+	// This specifies the set of legal states
+	// So if you want to make a and b mutually exclusive high,
+	// then mutex would be ~a | ~b
+	boolean::cover mutex;
+
 	void post_process(const ucs::variable_set &variables);
 };
 

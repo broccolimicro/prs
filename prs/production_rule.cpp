@@ -21,12 +21,11 @@ production_rule::~production_rule()
 
 production_rule_set::production_rule_set()
 {
-
+	mutex = 1;
 }
 
 production_rule_set::~production_rule_set()
 {
-
 }
 
 void production_rule_set::post_process(const ucs::variable_set &variables)

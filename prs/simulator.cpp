@@ -12,50 +12,62 @@
 namespace prs
 {
 
+enabled_rule::enabled_rule()
+{
+	index = -1;
+	stable = false;
+	vacuous = true;
+}
+
+enabled_rule::~enabled_rule()
+{
+
+}
+
 string enabled_rule::to_string(const production_rule_set &base, const ucs::variable_set &v)
 {
 	string result;
-	result = export_expression(guard, v).to_string();
+	result = export_expression(guard_action, v).to_string();
 	if (stable)
 		result += "->";
 	else
 		result += "~>";
-	result += export_composition(base.rules[index].local_action.cubes[term], v).to_string();
+	result += export_composition(base.rules[index].local_action, v).to_string();
 	return result;
 }
 
 bool operator<(enabled_rule i, enabled_rule j)
 {
-	return ((term_index)i < (term_index)j) ||
-		   ((term_index)i == (term_index)j && i.history < j.history);
+	return (i.index < j.index) ||
+		   (i.index == j.index && i.history < j.history);
 }
 
 bool operator>(enabled_rule i, enabled_rule j)
 {
-	return ((term_index)i > (term_index)j) ||
-		   ((term_index)i == (term_index)j && i.history > j.history);
+	return (i.index > j.index) ||
+		   (i.index == j.index && i.history > j.history);
 }
 
 bool operator<=(enabled_rule i, enabled_rule j)
 {
-	return ((term_index)i < (term_index)j) ||
-		   ((term_index)i == (term_index)j && i.history <= j.history);
+	return (i.index < j.index) ||
+		   (i.index == j.index && i.history <= j.history);
 }
 
 bool operator>=(enabled_rule i, enabled_rule j)
 {
-	return ((term_index)i > (term_index)j) ||
-		   ((term_index)i == (term_index)j && i.history >= j.history);
+	return (i.index > j.index) ||
+		   (i.index == j.index && i.history >= j.history);
 }
 
 bool operator==(enabled_rule i, enabled_rule j)
 {
-	return ((term_index)i == (term_index)j && i.history == j.history);
+	return (i.index == j.index && i.history == j.history);
 }
 
 bool operator!=(enabled_rule i, enabled_rule j)
 {
-	return ((term_index)i != (term_index)j || i.history != j.history);
+	return (i.index != j.index || i.history != j.history);
 }
 
 instability::instability()
@@ -95,7 +107,7 @@ interference::interference()
 {
 }
 
-interference::interference(const enabled_rule &first, const enabled_rule &second)
+interference::interference(const term_index &first, const term_index &second)
 {
 	if (first < second)
 	{
@@ -116,10 +128,7 @@ interference::~interference()
 
 string interference::to_string(const production_rule_set &base, const ucs::variable_set &v)
 {
-	if (!first.stable || !second.stable)
-		return "weakly interfering rules " + first.to_string(base, v) + " and " + second.to_string(base, v);
-	else
-		return "interfering rules " + first.to_string(base, v) + " and " + second.to_string(base, v);
+	return "interfering rules " + first.to_string(base, v) + " and " + second.to_string(base, v);
 }
 
 mutex::mutex()
@@ -178,125 +187,65 @@ int simulator::enabled()
 	if (base == NULL)
 		return 0;
 
-	vector<enabled_rule> potential;
-	enabled_rule t;
-	for (t.index = 0; t.index < (int)base->rules.size(); t.index++)
+	vector<enabled_rule> preload;
+
+	for (int i = 0; i < (int)base->rules.size(); i++)
 	{
-		t.term = 0;
-		int pass = boolean::passes_guard(encoding, global, base->rules[t.index].guard, &t.guard);
-
-		vector<enabled_rule>::iterator loc = lower_bound(firing.begin(), firing.end(), t);
-		if (pass == -1 && loc != firing.end() && loc->index == t.index)
-			firing.erase(loc);
-		else if (pass >= 0)
-		{
-			t.stable = (bool)pass;
-
-			if (loc == firing.end() || loc->index != t.index)
-				for (t.term = 0; t.term < (int)base->rules[t.index].local_action.cubes.size(); t.term++)
-				{
-					t.local_action = base->rules[t.index].local_action.cubes[t.term];
-					t.remote_action = base->rules[t.index].remote_action.cubes[t.term];
-					potential.push_back(t);
-				}
-			else
+		enabled_rule t;
+		t.index = i;
+		bool previously_enabled = false;
+		for (int j = 0; j < (int)loaded.size() && !previously_enabled; j++)
+			if (loaded[j].index == t.index)
 			{
-				loc->guard = t.guard;
-				loc->local_action = base->rules[loc->index].local_action.cubes[loc->term];
-				loc->remote_action = base->rules[loc->index].remote_action.cubes[loc->term];
-
-				if (loc->stable != t.stable)
-				{
-					loc->stable = t.stable;
-					potential.push_back(*loc);
-					firing.erase(loc);
-				}
+				t.history = loaded[j].history;
+				previously_enabled = true;
 			}
-		}
+
+		int ready = boolean::passes_guard(encoding, global, base->rules[t.index].guard, &t.guard_action);
+		if (ready < 0 && previously_enabled)
+			ready = 0;
+
+		t.stable = (ready > 0);
+		t.vacuous = boolean::vacuous_assign(global, base->rules[t.index].remote_action, t.stable);
+		t.mutex = boolean::passes_mutex(local_assign(global, base->rules[t.index].remote_action, t.stable), base->mutex);
+
+		if (ready >= 0 && !t.vacuous && t.mutex.size() > 0)
+			preload.push_back(t);
 	}
 
-	// Check for instability
-	int i = 0, j = 0;
-	while (i < (int)ready.size())
-	{
-		if (j >= (int)potential.size() || (term_index)ready[i] < (term_index)potential[j])
-		{
-			ready[i].stable = false;
-			potential.insert(potential.begin() + j, ready[i]);
-			i++;
-			j++;
-		}
-		else if ((term_index)potential[j] < (term_index)ready[i])
-			j++;
-		else
-		{
-			potential[j].history = ready[i].history;
-			i++;
-			j++;
-		}
-	}
+	loaded = preload;
+	ready.clear();
+
+	for (int i = 0; i < (int)loaded.size(); i++)
+		if (!loaded[i].vacuous)
+			for (int j = 0; j < (int)loaded[i].mutex.size(); j++)
+				ready.push_back(pair<int, int>(i, loaded[i].mutex[j]));
 
 	if (last.index >= 0)
-		for (int i = 0; i < (int)potential.size(); i++)
-			potential[i].history.push_back(last);
+		for (int i = 0; i < (int)loaded.size(); i++)
+			loaded[i].history.push_back(last);
 
-	ready = potential;
-
-	// Check for interference and mutex
-	bool change = true;
-	while (change)
+	/*for (int i = 0; i < (int)loaded.size(); i++)
 	{
-		change = false;
-		for (int i = 0; i < (int)ready.size(); i++)
-			for (int j = 0; j < (int)firing.size(); j++)
-				if (!are_mutex(ready[i].guard, firing[j].guard))
-				{
-					ready[i].local_action = boolean::interfere(ready[i].local_action, firing[j].remote_action);
-					ready[i].remote_action = boolean::interfere(ready[i].remote_action, firing[j].remote_action);
-				}
-
-		vector<enabled_rule> vacuous;
-		for (int i = 0; i < (int)ready.size(); i++)
-			if (vacuous_assign(global, ready[i].remote_action, ready[i].stable))
-				vacuous.push_back(ready[i]);
-
-		for (int i = 0; i < (int)vacuous.size(); i++)
-			for (int j = i+1; j < (int)vacuous.size(); j++)
-				if (vacuous[i].index == vacuous[j].index)
-				{
-					mutex err(vacuous[i], vacuous[j]);
-					vector<mutex>::iterator loc = lower_bound(mutex_errors.begin(), mutex_errors.end(), err);
-					if (loc == mutex_errors.end() || *loc != err)
-					{
-						mutex_errors.insert(loc, err);
-						warning("", err.to_string(*base, *variables), __FILE__, __LINE__);
-					}
-				}
-
-		for (int i = 0; i < (int)vacuous.size(); i++)
-		{
-			firing.insert(lower_bound(firing.begin(), firing.end(), vacuous[i]), vacuous[i]);
-			for (int j = (int)ready.size()-1; j >= 0; j--)
-			{
-				if (ready[j].index != vacuous[i].index)
-					ready[j].history.push_back(vacuous[i]);
-				else
-					ready.erase(ready.begin() + j);
-			}
-			change = true;
-		}
-	}
-
+		cout << "\t\tLoaded " << i << ":" << loaded[i].index << " " << (loaded[i].stable ? "stable" : "unstable") << " " << (loaded[i].vacuous ? "vacuous" : "nonvacuous") << " " << export_expression(loaded[i].guard_action, *variables).to_string() << " -> " << export_composition(base->rules[loaded[i].index].local_action, *variables).to_string() << endl;
+		for (int j = 0; j < (int)loaded[i].history.size(); j++)
+			cout << "\t\t\t" << export_expression(base->rules[loaded[i].history[j].index].guard, *variables).to_string() << " -> " << export_composition(base->rules[loaded[i].history[j].index].local_action[loaded[i].history[j].term], *variables).to_string() << endl;
+	}*/
 
 	return ready.size();
 }
 
 boolean::cube simulator::fire(int index)
 {
-	if (base == NULL || index >= (int)ready.size())
+	if (base == NULL || index < 0 || index >= (int)ready.size())
 		return boolean::cube();
 
-	enabled_rule t = ready[index];
+	enabled_rule t = loaded[ready[index].first];
+	int term = ready[index].second;
+
+	loaded.erase(loaded.begin() + ready[index].first);
+
+	ready.clear();
 
 	if (!t.stable)
 	{
@@ -309,33 +258,40 @@ boolean::cube simulator::fire(int index)
 		}
 	}
 
-	encoding = encoding & t.guard;
-
-	for (int j = 0; j < (int)firing.size(); j++)
-		if ((t.stable || firing[j].stable) && !are_mutex(t.guard, firing[j].guard) && are_mutex(base->rules[t.index].remote_action.cubes[t.term], base->rules[firing[j].index].remote_action.cubes[firing[j].term]))
+	// Check for interfering transitions. Interfering transitions are the active transitions that have fired since this
+	// active transition was enabled.
+	boolean::cube local_action = base->rules[t.index].local_action[term];
+	boolean::cube remote_action = base->rules[t.index].remote_action[term];
+	for (int j = 0; j < (int)t.history.size(); j++)
+	{
+		if (boolean::are_mutex(base->rules[t.index].remote_action[term], base->rules[t.history[j].index].local_action[t.history[j].term]))
 		{
-			interference err(t, firing[j]);
+			interference err(term_index(t.index, term), t.history[j]);
 			vector<interference>::iterator loc = lower_bound(interference_errors.begin(), interference_errors.end(), err);
 			if (loc == interference_errors.end() || *loc != err)
 			{
 				interference_errors.insert(loc, err);
-				warning("", err.to_string(*base, *variables), __FILE__, __LINE__);
+				error("", err.to_string(*base, *variables), __FILE__, __LINE__);
 			}
 		}
 
-	global = boolean::local_assign(global, t.remote_action, t.stable);
-	encoding = boolean::local_assign(encoding & t.guard, t.local_action, t.stable);
-	encoding = boolean::remote_assign(encoding, global, true);
+		local_action = boolean::interfere(local_action, base->rules[t.history[j].index].remote_action[t.history[j].term]);
+		remote_action = boolean::interfere(remote_action, base->rules[t.history[j].index].remote_action[t.history[j].term]);
+	}
 
-	firing.insert(lower_bound(firing.begin(), firing.end(), t), t);
+	// Update the state
+	if (t.stable)
+	{
+		global &= t.guard_action;
+		encoding &= t.guard_action;
+	}
 
-	for (int i = (int)ready.size()-1; i >= 0; i--)
-		if (ready[i].index == t.index)
-			ready.erase(ready.begin() + i);
+	global = local_assign(global, remote_action, t.stable);
+	encoding = remote_assign(local_assign(encoding, local_action, t.stable), global, true);
 
-	last = t;
+	last = term_index(t.index, term);
 
-	return t.local_action;
+	return local_action;
 }
 
 void simulator::reset()
@@ -345,10 +301,11 @@ void simulator::reset()
 		global.set(i, -1);
 		encoding.set(i, -1);
 	}
+	loaded.clear();
 	ready.clear();
-	firing.clear();
 	instability_errors.clear();
 	interference_errors.clear();
 	mutex_errors.clear();
+	last = term_index();
 }
 }

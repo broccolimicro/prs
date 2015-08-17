@@ -14,12 +14,16 @@
 
 namespace prs
 {
-	struct enabled_rule : term_index
+	struct enabled_rule
 	{
+		enabled_rule();
+		~enabled_rule();
+
+		int index;
 		vector<term_index> history;
-		boolean::cube local_action;
-		boolean::cube remote_action;
-		boolean::cube guard;
+		boolean::cube guard_action;
+		vector<int> mutex;
+		bool vacuous;
 		bool stable;
 
 		string to_string(const production_rule_set &base, const ucs::variable_set &v);
@@ -34,10 +38,10 @@ namespace prs
 		string to_string(const production_rule_set &base, const ucs::variable_set &v);
 	};
 
-	struct interference : pair<enabled_rule, enabled_rule>
+	struct interference : pair<term_index, term_index>
 	{
 		interference();
-		interference(const enabled_rule &first, const enabled_rule &second);
+		interference(const term_index &first, const term_index &second);
 		~interference();
 
 		string to_string(const production_rule_set &base, const ucs::variable_set &v);
@@ -62,8 +66,8 @@ namespace prs
 		vector<interference> interference_errors;
 		vector<mutex> mutex_errors;
 
-		vector<enabled_rule> ready;
-		vector<enabled_rule> firing;
+		vector<enabled_rule> loaded;
+		vector<pair<int, int> > ready;
 		term_index last;
 
 		boolean::cube encoding;
