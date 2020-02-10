@@ -207,7 +207,7 @@ int simulator::enabled()
 
 		t.stable = (ready > 0);
 		t.vacuous = boolean::vacuous_assign(global, base->rules[t.index].remote_action, t.stable);
-		t.mutex = boolean::passes_mutex(local_assign(global, base->rules[t.index].remote_action, t.stable), base->mutex);
+		t.mutex = boolean::passes_constraint(local_assign(global, base->rules[t.index].remote_action, t.stable), base->mutex);
 
 		if (ready >= 0 && !t.vacuous && t.mutex.size() > 0)
 			preload.push_back(t);
