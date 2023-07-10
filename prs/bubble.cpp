@@ -209,17 +209,15 @@ void bubble::save_prs(production_rule_set *prs, ucs::variable_set &variables)
 	size_t num = variables.nodes.size();
 	for (size_t i = 0; i < num; i++) {
 		if (inverted[i]) {
+			variables.nodes[i].name.back().name = "_" + variables.nodes[i].name.back().name;
+
 			for (auto rule = prs->rules.begin(); rule != prs->rules.end(); rule++) {
 				rule->sv_not(i);
 			}
-
-			inv.insert(pair<size_t, size_t>(i, variables.nodes.size()));
-			variables.nodes.push_back(variables.nodes[i]);
-			variables.nodes.back().name.back().name = "_" + variables.nodes.back().name.back().name;
 		}
 	}
 
-	for (auto i = inv.begin(); i != inv.end(); i++)
+	/*for (auto i = inv.begin(); i != inv.end(); i++)
 	{
 		production_rule pun, pdn;
 		bool written = false;
@@ -231,28 +229,32 @@ void bubble::save_prs(production_rule_set *prs, ucs::variable_set &variables)
 
 		if (written) {
 			// TODO remote_action?
-			pun.guard = boolean::cover(i->first, 0);
-			pun.local_action = boolean::cover(i->second, 1);
-			pdn.guard = boolean::cover(i->first, 1);
-			pdn.local_action = boolean::cover(i->second, 0);
-		} else {
 			pun.guard = boolean::cover(i->second, 0);
 			pun.local_action = boolean::cover(i->first, 1);
 			pdn.guard = boolean::cover(i->second, 1);
 			pdn.local_action = boolean::cover(i->first, 0);
+		} else {
+			pun.guard = boolean::cover(i->first, 0);
+			pun.local_action = boolean::cover(i->second, 1);
+			pdn.guard = boolean::cover(i->first, 1);
+			pdn.local_action = boolean::cover(i->second, 0);
 		}
 		prs->rules.push_back(pun);
 		prs->rules.push_back(pdn);
-	}
+	}*/
 
 	// Apply local inversions to production rules
 	for (graph::iterator i = net.begin(); i != net.end(); i++) {
-		if (i->second.second) {
+		if (!i->second.first && i->second.second) {
 			auto j = inv.find(i->first.first);
 			if (j == inv.end()) {
 				j = inv.insert(pair<size_t, size_t>(i->first.first, variables.nodes.size())).first;
 				variables.nodes.push_back(variables.nodes[i->first.first]);
-				variables.nodes.back().name.back().name = "_" + variables.nodes.back().name.back().name;
+				if (variables.nodes.back().name.back().name[0] == '_') {
+					variables.nodes.back().name.back().name.erase(variables.nodes.back().name.back().name.begin());
+				} else {
+					variables.nodes.back().name.back().name = "_" + variables.nodes.back().name.back().name;
+				}
 
 				production_rule pun, pdn;
 				pun.guard = boolean::cover(j->first, 0);
@@ -273,8 +275,7 @@ void bubble::save_prs(production_rule_set *prs, ucs::variable_set &variables)
 					for (auto term = rule->guard.cubes.begin(); term != rule->guard.cubes.end(); term++) {
 						int value = term->get(j->first);
 						if (value != 2) {
-							term->set(j->second, value);
-							term->sv_not(j->second);
+							term->set(j->second, 1-value);
 							term->set(j->first, 2);
 						}
 					}

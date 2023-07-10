@@ -19,7 +19,7 @@ struct bubble
 	bubble();
 	~bubble();
 
-	// from, to -> , same sense
+	// from, to -> is_isochronic, has_bubble
 	typedef pair<int, int> arc;
 	typedef pair<bool, bool> bubbles;
 	typedef map<arc, bubbles> graph;
