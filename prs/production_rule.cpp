@@ -19,6 +19,22 @@ production_rule::~production_rule()
 
 }
 
+void production_rule::sv_not(int uid)
+{
+	for (auto term = guard.cubes.begin(); term != guard.cubes.end(); term++) {
+		term->sv_not(uid);
+	}
+
+	for (auto term = local_action.cubes.begin(); term != local_action.cubes.end(); term++) {
+		term->sv_not(uid);
+	}
+
+	for (auto term = remote_action.cubes.begin(); term != remote_action.cubes.end(); term++) {
+		term->sv_not(uid);
+	}
+}
+
+
 production_rule_set::production_rule_set()
 {
 	mutex = 1;

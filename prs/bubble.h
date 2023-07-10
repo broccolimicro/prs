@@ -1,0 +1,43 @@
+/*
+ *  bubble.h
+ *
+ *  Created on: July 9, 2023
+ *      Author: nbingham
+ */
+
+#pragma once
+
+#include <common/standard.h>
+#include <ucs/variable.h>
+#include <parse_dot/graph.h>
+#include "production_rule.h"
+
+namespace prs
+{
+
+struct bubble
+{
+	bubble();
+	~bubble();
+
+	// from, to -> , same sense
+	typedef pair<int, int> arc;
+	typedef pair<bool, bool> bubbles;
+	typedef map<arc, bubbles> graph;
+	typedef vector<int> cycle;
+	typedef pair<cycle, bool> bubbled_cycle;
+	
+	graph net;
+	vector<bubbled_cycle> cycles;
+	vector<bool> inverted;
+
+	void load_prs(const production_rule_set &prs, const ucs::variable_set &variables);
+	void save_prs(production_rule_set *prs, ucs::variable_set &variables);
+
+	void reshuffle(const ucs::variable_set &variables);
+	vector<bubbled_cycle> step(graph::iterator idx, bool forward, vector<int> cycle);
+
+	parse_dot::graph export_bubble(const ucs::variable_set &variables);
+};
+
+}

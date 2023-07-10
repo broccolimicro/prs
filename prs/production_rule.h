@@ -5,12 +5,11 @@
  *      Author: nbingham
  */
 
+#pragma once
+
 #include <common/standard.h>
 #include <boolean/cover.h>
 #include <ucs/variable.h>
-
-#ifndef prs_production_rule_h
-#define prs_production_rule_h
 
 namespace prs
 {
@@ -23,6 +22,8 @@ struct production_rule
 	boolean::cover guard;
 	boolean::cover local_action;
 	boolean::cover remote_action;
+
+	void sv_not(int uid);
 };
 
 struct production_rule_set
@@ -64,4 +65,3 @@ bool operator!=(term_index i, term_index j);
 
 }
 
-#endif
