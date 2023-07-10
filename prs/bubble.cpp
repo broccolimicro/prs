@@ -87,20 +87,21 @@ void bubble::load_prs(const production_rule_set &prs, const ucs::variable_set &v
 			j->second.first = false;
 		}
 	}
+
+	inverted.resize(variables.nodes.size(), false);
 }
 
-void bubble::reshuffle(const ucs::variable_set &variables)
+void bubble::reshuffle()
 {
-	cout << "Bubble Reshuffling" << endl;
-	// Generate bubble reshuffle graph
-	inverted.resize(variables.nodes.size(), false);
-
 	// Execute bubble reshuffling algorithm
 	for (graph::iterator i = net.begin(); i != net.end(); i++) {
-		vector<bubbled_cycle> temp = step(i, true, vector<int>());
+		vector<bubbled_cycle> temp = step(i);
 		cycles.insert(cycles.end(), temp.begin(), temp.end());
 	}
+}
 
+void bubble::save_prs(production_rule_set *prs, ucs::variable_set &variables)
+{
 	sort(cycles.begin(), cycles.end());
 	
 	// remove duplicate cycles
@@ -124,10 +125,7 @@ void bubble::reshuffle(const ucs::variable_set &variables)
 	}
 
 	// all that's left are negative cycles
-}
 
-void bubble::save_prs(production_rule_set *prs, ucs::variable_set &variables)
-{
 	// Remove Negative Cycles (currently negative cycles just throw an error message)
 	for (size_t i = 0; i < cycles.size(); i++) {
 		string tempstr;

@@ -33,8 +33,8 @@ struct bubble
 	void load_prs(const production_rule_set &prs, const ucs::variable_set &variables);
 	void save_prs(production_rule_set *prs, ucs::variable_set &variables);
 
-	void reshuffle(const ucs::variable_set &variables);
-	vector<bubbled_cycle> step(graph::iterator idx, bool forward, vector<int> cycle);
+	void reshuffle();
+	vector<bubbled_cycle> step(graph::iterator idx, bool forward = true, vector<int> cycle = vector<int>());
 };
 
 }
