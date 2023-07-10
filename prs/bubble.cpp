@@ -91,9 +91,11 @@ void bubble::load_prs(const production_rule_set &prs, const ucs::variable_set &v
 	inverted.resize(variables.nodes.size(), false);
 }
 
-vector<bubble::bubbled_cycle> bubble::step(graph::iterator idx, bool forward, vector<int> cycle)
+// cycles added, inverted signals
+pair<int, bool> bubble::step(graph::iterator idx, bool forward, vector<int> cycle)
 {
-	vector<bubbled_cycle> new_cycles;
+	int cycles_added = 0;
+	bool inverted_signals = false;
 	vector<int> negative_cycle;
 	vector<int>::iterator found;
 
@@ -102,6 +104,7 @@ vector<bubble::bubbled_cycle> bubble::step(graph::iterator idx, bool forward, ve
 	found = find(cycle.begin(), cycle.end(), forward ? idx->first.second : idx->first.first);
 	if (found == cycle.end()) {
 		if (idx->second.first && idx->second.second && forward) {
+			inverted_signals = true;
 			inverted[idx->first.second] = !inverted[idx->first.second];
 			for (graph::iterator j = net.begin(); j != net.end(); j++) {
 				if (j->first.first == idx->first.second || j->first.second == idx->first.second) {
@@ -110,6 +113,7 @@ vector<bubble::bubbled_cycle> bubble::step(graph::iterator idx, bool forward, ve
 			}
 		}
 		else if (idx->second.first && idx->second.second && !forward) {
+			inverted_signals = true;
 			inverted[idx->first.first] = !inverted[idx->first.first];
 			for (graph::iterator j = net.begin(); j != net.end(); j++) {
 				if (j->first.first == idx->first.first || j->first.second == idx->first.first) {
@@ -118,45 +122,29 @@ vector<bubble::bubbled_cycle> bubble::step(graph::iterator idx, bool forward, ve
 			}
 		}
 
-		for (graph::iterator i = net.begin(); new_cycles.size() == 0 && i != net.end(); i++) {
-			vector<bubbled_cycle> temp;
+		for (graph::iterator i = net.begin(); cycles_added == 0 && i != net.end(); i++) {
+			pair<int, bool> result(0, false); 
 			bool src_dst = i->first.first == idx->first.second;
 			bool same_src = i->first.first == idx->first.first;
 			bool same_dst = i->first.second == idx->first.second;
 			bool dst_src = i->first.second == idx->first.first;
 			if (forward && (src_dst || same_dst) && i != idx) {
-				temp = step(i, src_dst, cycle);
+				result = step(i, src_dst, cycle);
 			} else if (!forward && (same_src || dst_src) && i != idx) {
-				temp = step(i, same_src, cycle);
+				result = step(i, same_src, cycle);
 			}
-			new_cycles.insert(new_cycles.end(), temp.begin(), temp.end());
+			cycles_added += result.first;
+			inverted_signals = inverted_signals || result.second;
 		}
 	} else {
 		vector<int> temp(found, cycle.end());
 		sort(temp.begin(), temp.end());
 		temp.resize(unique(temp.begin(), temp.end()) - temp.begin());
-		new_cycles.push_back(bubbled_cycle(temp, !idx->second.first || !idx->second.second));
+		cycles.push_back(bubbled_cycle(temp, !idx->second.first || !idx->second.second));
+		cycles_added += 1;
 	}
 
-	sort(new_cycles.begin(), new_cycles.end());
-	new_cycles.resize(unique(new_cycles.begin(), new_cycles.end()) - new_cycles.begin());
-
-	// annihilate bubbles
-	for (size_t i = 1; i < new_cycles.size(); i++) {
-		if (new_cycles[i].first == new_cycles[i-1].first) {
-			new_cycles.erase(new_cycles.begin() + i);
-			new_cycles.erase(new_cycles.begin() + i-1);
-			i--;
-		}
-	}
-
-	return new_cycles;
-}
-
-void bubble::step(graph::iterator start)
-{
-	vector<bubbled_cycle> temp = step(start, true, vector<int>());
-	cycles.insert(cycles.end(), temp.begin(), temp.end());
+	return pair<int, bool>(cycles_added, inverted_signals);
 }
 
 void bubble::reshuffle()
@@ -169,9 +157,8 @@ void bubble::reshuffle()
 
 void bubble::save_prs(production_rule_set *prs, ucs::variable_set &variables)
 {
-	sort(cycles.begin(), cycles.end());
-	
 	// remove duplicate cycles
+	sort(cycles.begin(), cycles.end());
 	cycles.resize(unique(cycles.begin(), cycles.end()) - cycles.begin());
 
 	// annihilate conflicting cycles
@@ -190,8 +177,6 @@ void bubble::save_prs(production_rule_set *prs, ucs::variable_set &variables)
 			i--;
 		}
 	}
-
-	// all that's left are negative cycles
 
 	// Remove Negative Cycles (currently negative cycles just throw an error message)
 	for (size_t i = 0; i < cycles.size(); i++) {
@@ -216,33 +201,7 @@ void bubble::save_prs(production_rule_set *prs, ucs::variable_set &variables)
 			}
 		}
 	}
-
-	/*for (auto i = inv.begin(); i != inv.end(); i++)
-	{
-		production_rule pun, pdn;
-		bool written = false;
-		for (auto rule = prs->rules.begin(); !written && rule != prs->rules.end(); rule++) {
-			for (auto term = rule->local_action.cubes.begin(); !written && term != rule->local_action.cubes.end(); term++) {
-				written = written || term->get((int)i->first) != 2;
-			}
-		}
-
-		if (written) {
-			// TODO remote_action?
-			pun.guard = boolean::cover(i->second, 0);
-			pun.local_action = boolean::cover(i->first, 1);
-			pdn.guard = boolean::cover(i->second, 1);
-			pdn.local_action = boolean::cover(i->first, 0);
-		} else {
-			pun.guard = boolean::cover(i->first, 0);
-			pun.local_action = boolean::cover(i->second, 1);
-			pdn.guard = boolean::cover(i->first, 1);
-			pdn.local_action = boolean::cover(i->second, 0);
-		}
-		prs->rules.push_back(pun);
-		prs->rules.push_back(pdn);
-	}*/
-
+	
 	// Apply local inversions to production rules
 	for (graph::iterator i = net.begin(); i != net.end(); i++) {
 		if (!i->second.first && i->second.second) {
