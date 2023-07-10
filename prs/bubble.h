@@ -9,7 +9,6 @@
 
 #include <common/standard.h>
 #include <ucs/variable.h>
-#include <parse_dot/graph.h>
 #include "production_rule.h"
 
 namespace prs
@@ -36,8 +35,6 @@ struct bubble
 
 	void reshuffle(const ucs::variable_set &variables);
 	vector<bubbled_cycle> step(graph::iterator idx, bool forward, vector<int> cycle);
-
-	parse_dot::graph export_bubble(const ucs::variable_set &variables);
 };
 
 }

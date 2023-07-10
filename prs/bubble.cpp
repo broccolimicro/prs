@@ -8,7 +8,6 @@
 #include "bubble.h"
 #include <common/message.h>
 #include <common/text.h>
-#include <parse_dot/node_id.h>
 
 namespace prs
 {
@@ -280,60 +279,6 @@ vector<bubble::bubbled_cycle> bubble::step(graph::iterator idx, bool forward, ve
 	}
 
 	return new_cycles;
-}
-
-parse_dot::graph bubble::export_bubble(const ucs::variable_set &variables)
-{
-	parse_dot::graph graph;
-	graph.type = "digraph";
-	graph.id = "bubble";
-
-	for (size_t i = 0; i < variables.nodes.size(); i++)
-	{
-		graph.statements.push_back(parse_dot::statement());
-		parse_dot::statement &stmt = graph.statements.back();
-		stmt.statement_type = "node";
-		stmt.nodes.push_back(new parse_dot::node_id("V" + to_string(i)));
-		stmt.attributes.attributes.push_back(parse_dot::assignment_list());
-		parse_dot::assignment_list &attr = stmt.attributes.attributes.back();
-		attr.as.push_back(parse_dot::assignment());
-		parse_dot::assignment &a = attr.as.back();
-		a.first = "label";
-		a.second = variables.nodes[i].to_string();
-	}
-
-	graph::iterator net2iter;
-	for (auto i = net.begin(); i != net.end(); i++)
-	{
-		graph.statements.push_back(parse_dot::statement());
-		parse_dot::statement &stmt = graph.statements.back();
-		stmt.statement_type = "edge";
-		stmt.nodes.push_back(new parse_dot::node_id("V" + to_string(i->first.first)));
-		stmt.nodes.push_back(new parse_dot::node_id("V" + to_string(i->first.second)));
-		if (i->second.first || i->second.second)
-		{
-			stmt.attributes.attributes.push_back(parse_dot::assignment_list());
-			parse_dot::assignment_list &attr = stmt.attributes.attributes.back();
-
-			if (i->second.first)
-			{
-				attr.as.push_back(parse_dot::assignment());
-				parse_dot::assignment &a = attr.as.back();
-				a.first = "style";
-				a.second = "dashed";
-			}
-
-			if (i->second.second)
-			{
-				attr.as.push_back(parse_dot::assignment());
-				parse_dot::assignment &a1 = attr.as.back();
-				a1.first = "arrowhead";
-				a1.second = "odotnormal";
-			}
-		}
-	}
-
-	return graph;
 }
 
 }
