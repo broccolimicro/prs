@@ -31,10 +31,12 @@ struct bubble
 	vector<bool> inverted;
 
 	void load_prs(const production_rule_set &prs, const ucs::variable_set &variables);
-	void save_prs(production_rule_set *prs, ucs::variable_set &variables);
 
+	vector<bubbled_cycle> step(graph::iterator idx, bool forward, vector<int> cycle);
+	void step(graph::iterator start);
 	void reshuffle();
-	vector<bubbled_cycle> step(graph::iterator idx, bool forward = true, vector<int> cycle = vector<int>());
+	
+	void save_prs(production_rule_set *prs, ucs::variable_set &variables);
 };
 
 }
