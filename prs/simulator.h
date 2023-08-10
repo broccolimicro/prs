@@ -80,6 +80,8 @@ namespace prs
 		boolean::cube fire(int index);
 
 		void reset();
+		void wait();
+		void run();
 	};
 }
 

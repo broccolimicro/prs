@@ -298,8 +298,16 @@ void simulator::reset()
 {
 	for (int i = 0; i < (int)variables->nodes.size(); i++)
 	{
-		global.set(i, -1);
-		encoding.set(i, -1);
+		if (variables->nodes[i].to_string() == "Reset") {
+			global.set(i, 1);
+			encoding.set(i, 1);
+		} else if (variables->nodes[i].to_string() == "_Reset") {
+			global.set(i, 0);
+			encoding.set(i, 0);
+		} else {
+			global.set(i, -1);
+			encoding.set(i, -1);
+		}
 	}
 	loaded.clear();
 	ready.clear();
@@ -308,4 +316,26 @@ void simulator::reset()
 	mutex_errors.clear();
 	last = term_index();
 }
+
+void simulator::wait()
+{
+	vector<vector<int> > groups = variables->get_groups();
+	encoding = encoding.remote(groups);
+	encoding = global.remote(groups);
+}
+
+void simulator::run()
+{
+	for (int i = 0; i < (int)variables->nodes.size(); i++)
+	{
+		if (variables->nodes[i].to_string() == "Reset") {
+			global.set(i, 0);
+			encoding.set(i, 0);
+		} else if (variables->nodes[i].to_string() == "_Reset") {
+			global.set(i, 1);
+			encoding.set(i, 1);
+		}
+	}
+}
+
 }
