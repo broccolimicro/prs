@@ -1,3 +1,6 @@
 *.o
 *.a
 *.so
+*.d
+build
+test

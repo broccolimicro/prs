@@ -1,10 +1,3 @@
-/*
- * production_rule.h
- *
- *  Created on: Feb 2, 2015
- *      Author: nbingham
- */
-
 #pragma once
 
 #include <common/standard.h>
