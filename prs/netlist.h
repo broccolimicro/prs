@@ -32,6 +32,9 @@ struct device {
 struct netlist {
 	vector<net> nets;
 	vector<device> devs;
+
+	void build_transistor_sizing();
+	void build_gate_sizing();
 };
 
 }
