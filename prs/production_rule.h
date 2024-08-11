@@ -17,6 +17,7 @@ struct production_rule
 	boolean::cover remote_action;
 
 	void sv_not(int uid);
+	bool cmos_implementable();
 };
 
 struct production_rule_set
@@ -32,6 +33,7 @@ struct production_rule_set
 	boolean::cover mutex;
 
 	void post_process(const ucs::variable_set &variables);
+	bool cmos_implementable();
 };
 
 /* This points to the cube 'term' in the action of transition 'index' in a graph.

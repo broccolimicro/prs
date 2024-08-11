@@ -34,6 +34,9 @@ void production_rule::sv_not(int uid)
 	}
 }
 
+bool production_rule::cmos_implementable() {
+	return (not local_action.has(0) or not guard.has(0)) and (not local_action.has(1) or not guard.has(1));
+}
 
 production_rule_set::production_rule_set()
 {
@@ -48,6 +51,15 @@ void production_rule_set::post_process(const ucs::variable_set &variables)
 {
 	for (int i = 0; i < (int)rules.size(); i++)
 		rules[i].remote_action = rules[i].local_action.remote(variables.get_groups());
+}
+
+bool production_rule_set::cmos_implementable() {
+	for (auto rule = rules.begin(); rule != rules.end(); rule++) {
+		if (not rule->cmos_implementable()) {
+			return false;
+		}
+	}
+	return true;
 }
 
 term_index::term_index()
