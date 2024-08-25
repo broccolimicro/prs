@@ -201,15 +201,15 @@ int simulator::enabled()
 				previously_enabled = true;
 			}
 
-		int ready = boolean::passes_guard(encoding, global, base->rules[t.index].guard, &t.guard_action);
-		if (ready < 0 && previously_enabled)
+		int ready = boolean::passes_guard(encoding, global, base->rules[t.index].assume, base->rules[t.index].guard, &t.guard_action);
+		if (ready < 0 and previously_enabled)
 			ready = 0;
 
 		t.stable = (ready > 0);
 		t.vacuous = boolean::vacuous_assign(global, base->rules[t.index].remote_action, t.stable);
 		t.mutex = boolean::passes_constraint(local_assign(global, base->rules[t.index].remote_action, t.stable), base->mutex);
 
-		if (ready >= 0 && !t.vacuous && t.mutex.size() > 0)
+		if (ready >= 0 and not t.vacuous and not t.mutex.empty())
 			preload.push_back(t);
 	}
 
@@ -288,6 +288,13 @@ boolean::cube simulator::fire(int index)
 
 	global = local_assign(global, remote_action, t.stable);
 	encoding = remote_assign(local_assign(encoding, local_action, t.stable), global, true);
+
+	for (int i = (int)loaded.size()-1; i >= 0; i--) {
+		if (are_mutex(base->rules[loaded[i].index].assume, global)
+			or (are_mutex(local_assign(global, base->rules[loaded[i].index].remote_action, true), base->rules[t.index].assume) and not loaded[i].stable)) {
+			loaded.erase(loaded.begin() + i);
+		}
+	}
 
 	last = term_index(t.index, term);
 

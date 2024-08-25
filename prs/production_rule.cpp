@@ -12,6 +12,8 @@ namespace prs
 {
 production_rule::production_rule()
 {
+	assume = 1;
+	guard = 1;
 }
 
 production_rule::~production_rule()

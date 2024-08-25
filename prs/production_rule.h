@@ -12,6 +12,7 @@ struct production_rule
 	production_rule();
 	~production_rule();
 
+	boolean::cover assume;
 	boolean::cover guard;
 	boolean::cover local_action;
 	boolean::cover remote_action;
