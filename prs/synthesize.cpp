@@ -2,7 +2,7 @@
 
 namespace prs {
 
-netlist build_netlist(const production_rule_set &prs) {
+sch::Subckt build_netlist(const production_rule_set &prs) {
 	// TODO Circuit and Netlist Synthesis
 	//
 	// The goal of this project is to generate a spice netlist from the

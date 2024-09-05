@@ -14,7 +14,7 @@
 namespace prs
 {
 
-struct bubble
+/*struct bubble
 {
 	bubble();
 	~bubble();
@@ -36,6 +36,6 @@ struct bubble
 	void reshuffle();
 	
 	void save_prs(production_rule_set *prs, ucs::variable_set &variables);
-};
+};*/
 
 }

@@ -4,60 +4,85 @@
 #include <boolean/cover.h>
 #include <ucs/variable.h>
 
+#include <vector>
+#include <array>
+
+using namespace std;
+
 namespace prs
 {
 
-struct production_rule
-{
-	production_rule();
-	~production_rule();
+struct attributes {
+	attributes();
+	attributes(bool weak, bool keeper=false, float width=0.0, float length=0.0, string variant="", uint64_t delay_max=10000);
+	~attributes();
 
-	boolean::cover assume;
-	boolean::cover guard;
-	boolean::cover local_action;
-	boolean::cover remote_action;
+	bool weak;
+	bool keeper;
 
-	void sv_not(int uid);
-	bool cmos_implementable();
+	// multiples of the minimum width of diffusion for that type of transistor.
+	float width;
+	float length;
+	string variant;
+	
+	uint64_t delay_max;
+};
+
+struct device {
+	device();
+	device(int source, int gate, int drain, int threshold, int driver, attributes attr=attributes());
+	~device();
+
+	// index into nets if positive or nodes if negative
+	int source;
+	int gate;
+	int drain;
+	
+	int threshold;
+	int driver;
+
+	attributes attr;
+};
+
+struct net {
+	net();
+	~net();
+
+	vector<int> gateOf;
+	array<vector<int>, 2> sourceOf;
+	array<vector<int>, 2> drainOf;
+
+	vector<int> remote;
+
+	void add_remote(int uid);
 };
 
 struct production_rule_set
 {
 	production_rule_set();
+	production_rule_set(const ucs::variable_set &v);
 	~production_rule_set();
 
-	vector<production_rule> rules;
+	vector<device> devs;
+	// nets in this array should be ordered by uid from ucs
+	vector<net> nets;
+	vector<net> nodes;
 
-	// This specifies the set of legal states
-	// So if you want to make a and b mutually exclusive high,
-	// then mutex would be ~a | ~b
-	boolean::cover mutex;
+	void init(const ucs::variable_set &v);
 
-	void post_process(const ucs::variable_set &variables);
-	bool cmos_implementable();
+	static int flip(int index);
+	net &at(int index);
+	const net &at(int index) const;
+	net &create(int index);
+
+	int connect(int n0, int n1);
+	void replace(vector<int> &lst, int from, int to);
+	int add_source(int gate, int drain, int threshold, int driver, attributes attr=attributes());
+	int add_drain(int source, int gate, int threshold, int driver, attributes attr=attributes());
+	int add(boolean::cube guard, int drain, int driver, attributes attr=attributes(), vector<int> order=vector<int>());
+	int add_hfactor(boolean::cover guard, int drain, int driver, attributes attr=attributes(), vector<int> order=vector<int>());
+	void add(int source, boolean::cover guard, boolean::cover action, attributes attr=attributes(), vector<int> order=vector<int>());
 };
-
-/* This points to the cube 'term' in the action of transition 'index' in a graph.
- * i.e. g.transitions[index].action.cubes[term]
- */
-struct term_index
-{
-	term_index();
-	term_index(int index, int term);
-	~term_index();
-
-	int index;
-	int term;
-
-	string to_string(const production_rule_set &g, const ucs::variable_set &v);
-};
-
-bool operator<(term_index i, term_index j);
-bool operator>(term_index i, term_index j);
-bool operator<=(term_index i, term_index j);
-bool operator>=(term_index i, term_index j);
-bool operator==(term_index i, term_index j);
-bool operator!=(term_index i, term_index j);
 
 }
 

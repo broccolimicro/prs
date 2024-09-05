@@ -1,5 +1,5 @@
 NAME          = prs
-DEPEND        = boolean common parse parse_expression parse_ucs interpret_ucs ucs interpret_boolean parse_dot
+DEPEND        = sch phy boolean common parse parse_expression parse_ucs interpret_ucs ucs interpret_boolean parse_dot
 
 SRCDIR        = $(NAME)
 TESTDIR       = tests

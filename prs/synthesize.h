@@ -1,11 +1,11 @@
 #pragma once
 
 #include "production_rule.h"
-#include "netlist.h"
+#include <sch/Subckt.h>
 
 namespace prs {
 
-netlist build_netlist(const production_rule_set &prs);
+sch::Subckt build_netlist(const production_rule_set &prs);
 
 }
 

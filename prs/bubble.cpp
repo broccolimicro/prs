@@ -12,7 +12,7 @@
 namespace prs
 {
 
-bubble::bubble()
+/*bubble::bubble()
 {
 }
 
@@ -242,6 +242,6 @@ void bubble::save_prs(production_rule_set *prs, ucs::variable_set &variables)
 			}
 		}
 	}
-}
+}*/
 
 }

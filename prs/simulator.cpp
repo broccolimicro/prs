@@ -1,162 +1,31 @@
-/*
- * simulator.cpp
- *
- *  Created on: Jun 2, 2015
- *      Author: nbingham
- */
-
 #include "simulator.h"
 #include <common/message.h>
+#include <common/math.h>
 #include <interpret_boolean/export.h>
 
-namespace prs
-{
+namespace prs {
 
-enabled_rule::enabled_rule()
-{
-	index = -1;
-	stable = false;
-	vacuous = true;
+enabled_transition::enabled_transition() {
+	this->net = -1;
+	this->dev = -1;
+	this->fire_at = 0;
 }
 
-enabled_rule::~enabled_rule()
-{
-
+enabled_transition::enabled_transition(int net, int dev, uint64_t fire_at) {
+	this->net = net;
+	this->dev = dev;
+	this->fire_at = fire_at;
 }
 
-string enabled_rule::to_string(const production_rule_set &base, const ucs::variable_set &v)
-{
-	string result;
-	result = export_expression(guard_action, v).to_string();
-	if (stable)
-		result += "->";
-	else
-		result += "~>";
-	result += export_composition(base.rules[index].local_action, v).to_string();
-	return result;
+enabled_transition::~enabled_transition() {
 }
 
-bool operator<(enabled_rule i, enabled_rule j)
-{
-	return (i.index < j.index) ||
-		   (i.index == j.index && i.history < j.history);
+bool operator<(enabled_transition t0, enabled_transition t1) {
+	return t0.fire_at < t1.fire_at;
 }
 
-bool operator>(enabled_rule i, enabled_rule j)
-{
-	return (i.index > j.index) ||
-		   (i.index == j.index && i.history > j.history);
-}
-
-bool operator<=(enabled_rule i, enabled_rule j)
-{
-	return (i.index < j.index) ||
-		   (i.index == j.index && i.history <= j.history);
-}
-
-bool operator>=(enabled_rule i, enabled_rule j)
-{
-	return (i.index > j.index) ||
-		   (i.index == j.index && i.history >= j.history);
-}
-
-bool operator==(enabled_rule i, enabled_rule j)
-{
-	return (i.index == j.index && i.history == j.history);
-}
-
-bool operator!=(enabled_rule i, enabled_rule j)
-{
-	return (i.index != j.index || i.history != j.history);
-}
-
-instability::instability()
-{
-}
-
-instability::instability(const enabled_rule &cause) : enabled_rule(cause)
-{
-}
-
-instability::~instability()
-{
-
-}
-
-string instability::to_string(const production_rule_set &base, const ucs::variable_set &v)
-{
-	string result = "unstable rule " + enabled_rule::to_string(base, v);
-
-	if (history.size() > 0)
-	{
-		result += " cause: {";
-
-		for (int j = 0; j < (int)history.size(); j++)
-		{
-			if (j != 0)
-				result += "; ";
-
-			result += history[j].to_string(base, v);
-		}
-		result += "}";
-	}
-	return result;
-}
-
-interference::interference()
-{
-}
-
-interference::interference(const term_index &first, const term_index &second)
-{
-	if (first < second)
-	{
-		this->first = first;
-		this->second = second;
-	}
-	else
-	{
-		this->first = second;
-		this->second = first;
-	}
-}
-
-interference::~interference()
-{
-
-}
-
-string interference::to_string(const production_rule_set &base, const ucs::variable_set &v)
-{
-	return "interfering rules " + first.to_string(base, v) + " and " + second.to_string(base, v);
-}
-
-mutex::mutex()
-{
-}
-
-mutex::mutex(const enabled_rule &first, const enabled_rule &second)
-{
-	if (first < second)
-	{
-		this->first = first;
-		this->second = second;
-	}
-	else
-	{
-		this->first = second;
-		this->second = first;
-	}
-}
-
-mutex::~mutex()
-{
-
-}
-
-string mutex::to_string(const production_rule_set &base, const ucs::variable_set &v)
-{
-	return "vacuous firings break mutual exclusion for rules " + first.to_string(base, v) + " and " + second.to_string(base, v);
+bool operator>(enabled_transition t0, enabled_transition t1) {
+	return t0.fire_at > t1.fire_at;
 }
 
 simulator::simulator()
@@ -169,12 +38,13 @@ simulator::simulator(const production_rule_set *base, const ucs::variable_set *v
 {
 	this->base = base;
 	this->variables = variables;
-	if (variables != NULL)
+	if (variables != NULL) {
 		for (int i = 0; i < (int)variables->nodes.size(); i++)
 		{
 			global.set(i, -1);
 			encoding.set(i, -1);
 		}
+	}
 }
 
 simulator::~simulator()
@@ -182,133 +52,169 @@ simulator::~simulator()
 
 }
 
-int simulator::enabled()
-{
-	if (base == NULL)
-		return 0;
-
-	vector<enabled_rule> preload;
-
-	for (int i = 0; i < (int)base->rules.size(); i++)
-	{
-		enabled_rule t;
-		t.index = i;
-		bool previously_enabled = false;
-		for (int j = 0; j < (int)loaded.size() && !previously_enabled; j++)
-			if (loaded[j].index == t.index)
-			{
-				t.history = loaded[j].history;
-				previously_enabled = true;
-			}
-
-		int ready = boolean::passes_guard(encoding, global, base->rules[t.index].assume, base->rules[t.index].guard, &t.guard_action);
-		if (ready < 0 and previously_enabled)
-			ready = 0;
-
-		t.stable = (ready > 0);
-		t.vacuous = boolean::vacuous_assign(global, base->rules[t.index].remote_action, t.stable);
-		t.mutex = boolean::passes_constraint(local_assign(global, base->rules[t.index].remote_action, t.stable), base->mutex);
-
-		if (ready >= 0 and not t.vacuous and not t.mutex.empty())
-			preload.push_back(t);
+void simulator::fire(int index) {
+	if (index < 0) {
+		std::pop_heap(enabled.begin(), enabled.end(), std::greater<>{});
+		index = (int)enabled.size()-1;
 	}
 
-	loaded = preload;
-	ready.clear();
+	enabled_transition t = enabled[index];
+	enabled.erase(enabled.begin() + index);
+	if (index != (int)enabled.size()) {
+		std::make_heap(enabled.begin(), enabled.end(), std::greater<>{});
+	}
 
-	for (int i = 0; i < (int)loaded.size(); i++)
-		if (!loaded[i].vacuous)
-			for (int j = 0; j < (int)loaded[i].mutex.size(); j++)
-				ready.push_back(pair<int, int>(i, loaded[i].mutex[j]));
+	int value = 3;
+	boolean::cube guard_action;
+	for (int j = 0; j < 2; j++) {
+		for (auto i = base->at(t.net).drainOf[j].begin(); i != base->at(t.net).drainOf[j].end(); i++) {
+			int gate = base->devs[*i].gate;
+			int local_value = encoding.get(gate);
+			int global_value = global.get(gate);
+			if (local_value == base->devs[*i].threshold or (local_value == 2 and global_value == base->devs[*i].threshold)) {
+				value &= (encoding.get(base->devs[*i].source)+1);
+				guard_action.set(gate, global_value);
+			}
+		}
+	}
 
-	if (last.index >= 0)
-		for (int i = 0; i < (int)loaded.size(); i++)
-			loaded[i].history.push_back(last);
+	bool stable = true;
+	if (value == 0) {
+		// interference
+	} else if (value != 2-base->devs[t.dev].threshold) {
+		// unstable
+		stable = false;
+	}
+	value -= 1;
+	// TODO(edward.bingham) need to propagate this down the stack
+	
+	if (value >= 0 and value < 2) {
+		encoding &= guard_action;
+	}
 
-	/*for (int i = 0; i < (int)loaded.size(); i++)
-	{
-		cout << "\t\tLoaded " << i << ":" << loaded[i].index << " " << (loaded[i].stable ? "stable" : "unstable") << " " << (loaded[i].vacuous ? "vacuous" : "nonvacuous") << " " << export_expression(loaded[i].guard_action, *variables).to_string() << " -> " << export_composition(base->rules[loaded[i].index].local_action, *variables).to_string() << endl;
-		for (int j = 0; j < (int)loaded[i].history.size(); j++)
-			cout << "\t\t\t" << export_expression(base->rules[loaded[i].history[j].index].guard, *variables).to_string() << " -> " << export_composition(base->rules[loaded[i].history[j].index].local_action[loaded[i].history[j].term], *variables).to_string() << endl;
-	}*/
+	boolean::cube local_action;
+	boolean::cube remote_action;
+	local_action.set(t.net, value);
+	for (int i = 0; i < (int)base->nets[t.net].remote.size(); i++) {
+		remote_action.set(base->nets[t.net].remote[i], value);
+	}
 
-	return ready.size();
+	global = local_assign(global, remote_action, stable);
+	encoding = remote_assign(local_assign(encoding, local_action, stable), global, true);
+	for (int i = 0; i < (int)base->nets[t.net].remote.size(); i++) {
+		update(base->nets[t.net].remote[i], value);
+	}
 }
 
-boolean::cube simulator::fire(int index)
-{
-	if (base == NULL || index < 0 || index >= (int)ready.size())
-		return boolean::cube();
+void simulator::update(int uid, int val) {
+	// check gateOf to update values for devices 
+	for (auto i = base->at(uid).gateOf.begin(); i != base->at(uid).gateOf.end(); i++) {
+		if (val == base->devs[*i].threshold and encoding.get(base->devs[*i].drain) != encoding.get(base->devs[*i].source)) {
+			bool found = false;
+			for (int k = 0; k < (int)enabled.size() and not found; k++) {
+				if (enabled[k].net == base->devs[*i].drain) {
+					found = true;
+				}
+			}
+			if (found) {
+				continue;
+			}
 
-	enabled_rule t = loaded[ready[index].first];
-	int term = ready[index].second;
+			uint64_t fire_at = now + pareto(base->devs[*i].attr.delay_max, 5.0);
 
-	loaded.erase(loaded.begin() + ready[index].first);
-
-	ready.clear();
-
-	if (!t.stable)
-	{
-		instability err(t);
-		vector<instability>::iterator loc = lower_bound(instability_errors.begin(), instability_errors.end(), err);
-		if (loc == instability_errors.end() || *loc != err)
-		{
-			instability_errors.insert(loc, err);
-			warning("", err.to_string(*base, *variables), __FILE__, __LINE__);
+			enabled.push_back(enabled_transition(base->devs[*i].drain, *i, fire_at));
+			std::push_heap(enabled.begin(), enabled.end(), std::greater<>{});
 		}
 	}
 
-	// Check for interfering transitions. Interfering transitions are the active transitions that have fired since this
-	// active transition was enabled.
-	boolean::cube local_action = base->rules[t.index].local_action[term];
-	boolean::cube remote_action = base->rules[t.index].remote_action[term];
-	for (int j = 0; j < (int)t.history.size(); j++)
-	{
-		if (boolean::are_mutex(base->rules[t.index].remote_action[term], base->rules[t.history[j].index].local_action[t.history[j].term]))
-		{
-			interference err(term_index(t.index, term), t.history[j]);
-			vector<interference>::iterator loc = lower_bound(interference_errors.begin(), interference_errors.end(), err);
-			if (loc == interference_errors.end() || *loc != err)
-			{
-				interference_errors.insert(loc, err);
-				error("", err.to_string(*base, *variables), __FILE__, __LINE__);
+	// check sourceOf to update values for devices with enabled gates
+	for (int j = 0; j < 2; j++) {
+		for (auto i = base->at(uid).sourceOf[j].begin(); i != base->at(uid).sourceOf[j].end(); i++) {
+			if (encoding.get(base->devs[*i].gate) == base->devs[*i].threshold and encoding.get(base->devs[*i].drain) != val) {
+				bool found = false;
+				for (int k = 0; k < (int)enabled.size() and not found; k++) {
+					if (enabled[k].net == base->devs[*i].drain) {
+						found = true;
+					}
+				}
+				if (found) {
+					continue;
+				}
+
+				uint64_t fire_at = now + pareto(base->devs[*i].attr.delay_max, 5.0);
+
+				enabled.push_back(enabled_transition(base->devs[*i].drain, *i, fire_at));
+				std::push_heap(enabled.begin(), enabled.end(), std::greater<>{});
 			}
 		}
+	}
+}
 
-		local_action = boolean::interfere(local_action, base->rules[t.history[j].index].remote_action[t.history[j].term]);
-		remote_action = boolean::interfere(remote_action, base->rules[t.history[j].index].remote_action[t.history[j].term]);
+void simulator::set(int uid, int val) {
+	boolean::cube local_action;
+	boolean::cube remote_action;
+	local_action.set(uid, val);
+	for (int i = 0; i < (int)base->nets[uid].remote.size(); i++) {
+		remote_action.set(base->nets[uid].remote[i], val);
 	}
 
-	// Update the state
-	if (t.stable)
-	{
-		global &= t.guard_action;
-		encoding &= t.guard_action;
-	}
-
-	global = local_assign(global, remote_action, t.stable);
-	encoding = remote_assign(local_assign(encoding, local_action, t.stable), global, true);
-
-	for (int i = (int)loaded.size()-1; i >= 0; i--) {
-		if (are_mutex(base->rules[loaded[i].index].assume, global)
-			or (are_mutex(local_assign(global, base->rules[loaded[i].index].remote_action, true), base->rules[t.index].assume) and not loaded[i].stable)) {
-			loaded.erase(loaded.begin() + i);
+	// clear covered events
+	bool reheap = false;
+	for (int i = (int)enabled.size()-1; i >= 0; i--) {
+		if (enabled[i].net == uid and base->devs[enabled[i].dev].driver == val) {
+			enabled.erase(enabled.begin()+i);
+			reheap = true;
 		}
 	}
+	if (reheap) {
+		std::make_heap(enabled.begin(), enabled.end(), std::greater<>{});
+	}
 
-	last = term_index(t.index, term);
+	global = local_assign(global, remote_action, true);
+	encoding = remote_assign(local_assign(encoding, local_action, true), global, true);
+	for (int i = 0; i < (int)base->nets[uid].remote.size(); i++) {
+		update(base->nets[uid].remote[i], val);
+	}
+}
 
-	return local_action;
+void simulator::set(boolean::cube action) {
+	boolean::cube remote_action = action.remote(variables->get_groups());
+
+	vector<int> change;
+	bool reheap = false;
+	for (int i = 0; i < (int)variables->nodes.size(); i++) {
+		int val = remote_action.get(i);
+		if (val != 2) {
+			change.push_back(i);
+			for (int j = (int)enabled.size()-1; j >= 0; j--) {
+				if (enabled[j].net == i and base->devs[enabled[j].dev].driver == val) {
+					enabled.erase(enabled.begin()+j);
+					reheap = true;
+				}
+			}
+		}
+	}
+	if (reheap) {
+		std::make_heap(enabled.begin(), enabled.end(), std::greater<>{});
+	}
+
+	global = local_assign(global, remote_action, true);
+	encoding = remote_assign(local_assign(encoding, action, true), global, true);
+
+	for (int i = 0; i < (int)change.size(); i++) {
+		update(change[i], remote_action.get(change[i]));
+	}
 }
 
 void simulator::reset()
 {
-	for (int i = 0; i < (int)variables->nodes.size(); i++)
-	{
-		if (variables->nodes[i].to_string() == "Reset") {
+	global.values.clear();
+	encoding.values.clear();
+	for (int i = 0; i < (int)variables->nodes.size(); i++) {
+		if (variables->nodes[i].to_string() == "Vdd") {
 			global.set(i, 1);
 			encoding.set(i, 1);
-		} else if (variables->nodes[i].to_string() == "_Reset") {
+		} else if (variables->nodes[i].to_string() == "GND") {
 			global.set(i, 0);
 			encoding.set(i, 0);
 		} else {
@@ -316,12 +222,19 @@ void simulator::reset()
 			encoding.set(i, -1);
 		}
 	}
-	loaded.clear();
-	ready.clear();
-	instability_errors.clear();
-	interference_errors.clear();
-	mutex_errors.clear();
-	last = term_index();
+
+	for (int i = 0; i < (int)variables->nodes.size(); i++) {
+		if (variables->nodes[i].to_string() == "Reset") {
+			set(i, 1);
+		} else if (variables->nodes[i].to_string() == "_Reset") {
+			set(i, 0);
+		}
+	}
+	//loaded.clear();
+	//instability_errors.clear();
+	//interference_errors.clear();
+	//mutex_errors.clear();
+	//last = term_index();
 }
 
 void simulator::wait()
@@ -333,14 +246,11 @@ void simulator::wait()
 
 void simulator::run()
 {
-	for (int i = 0; i < (int)variables->nodes.size(); i++)
-	{
+	for (int i = 0; i < (int)variables->nodes.size(); i++) {
 		if (variables->nodes[i].to_string() == "Reset") {
-			global.set(i, 0);
-			encoding.set(i, 0);
+			set(i, 0);
 		} else if (variables->nodes[i].to_string() == "_Reset") {
-			global.set(i, 1);
-			encoding.set(i, 1);
+			set(i, 1);
 		}
 	}
 }

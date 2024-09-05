@@ -1,88 +1,47 @@
-/*
- * simulator.h
- *
- *  Created on: Jun 2, 2015
- *      Author: nbingham
- */
+#pragma once
 
 #include "production_rule.h"
 #include <ucs/variable.h>
 #include <common/standard.h>
 
-#ifndef prs_simulator_h
-#define prs_simulator_h
+namespace prs {
 
-namespace prs
-{
-	struct enabled_rule
-	{
-		enabled_rule();
-		~enabled_rule();
+struct enabled_transition {
+	enabled_transition();
+	enabled_transition(int net, int dev, uint64_t fire_at);
+	~enabled_transition();
 
-		int index;
-		vector<term_index> history;
-		boolean::cube guard_action;
-		vector<int> mutex;
-		bool vacuous;
-		bool stable;
+	int net;
+	int dev;
+	uint64_t fire_at;
+};
 
-		string to_string(const production_rule_set &base, const ucs::variable_set &v);
-	};
+bool operator<(enabled_transition t0, enabled_transition t1);
+bool operator>(enabled_transition t0, enabled_transition t1);
 
-	struct instability : enabled_rule
-	{
-		instability();
-		instability(const enabled_rule &cause);
-		~instability();
+struct simulator {
+	simulator();
+	simulator(const production_rule_set *base, const ucs::variable_set *variables);
+	~simulator();
 
-		string to_string(const production_rule_set &base, const ucs::variable_set &v);
-	};
+	const production_rule_set *base;
+	const ucs::variable_set *variables;
 
-	struct interference : pair<term_index, term_index>
-	{
-		interference();
-		interference(const term_index &first, const term_index &second);
-		~interference();
+	boolean::cube encoding;
+	boolean::cube global;
+	uint64_t now;
 
-		string to_string(const production_rule_set &base, const ucs::variable_set &v);
-	};
+	vector<enabled_transition> enabled;
 
-	struct mutex : pair<enabled_rule, enabled_rule>
-	{
-		mutex();
-		mutex(const enabled_rule &first, const enabled_rule &second);
-		~mutex();
+	void fire(int index=-1);
 
-		string to_string(const production_rule_set &base, const ucs::variable_set &v);
-	};
+	void update(int uid, int val);
+	void set(int uid, int val);
+	void set(boolean::cube action);
+	void reset();
+	void wait();
+	void run();
+};
 
-	struct simulator
-	{
-		simulator();
-		simulator(const production_rule_set *base, const ucs::variable_set *variables);
-		~simulator();
-
-		vector<instability> instability_errors;
-		vector<interference> interference_errors;
-		vector<mutex> mutex_errors;
-
-		vector<enabled_rule> loaded;
-		vector<pair<int, int> > ready;
-		term_index last;
-
-		boolean::cube encoding;
-		boolean::cube global;
-
-		const production_rule_set *base;
-		const ucs::variable_set *variables;
-
-		int enabled();
-		boolean::cube fire(int index);
-
-		void reset();
-		void wait();
-		void run();
-	};
 }
 
-#endif
