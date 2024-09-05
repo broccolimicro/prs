@@ -1,19 +1,11 @@
 #pragma once
 
+#include <deque>
 #include <vector>
 #include <stdint.h>
 #include <limits>
 
 #include <stdio.h>
-#include <algorithm>
-
-// This version slows down over time. Everything is implemented to be O(1) or
-// amortized O(1) time, and it's not slowing down in relation to the number of
-// elements, but just over usage time. My current guess is that in the
-// beginning, the backing container (deque) is first allocated and elements are
-// taken in order to place in the calendar. However, as elements are added and
-// removed, those memory locations become shuffled. This causes more and more
-// cache misses over time, slowing down the push and pop latencies.
 
 template <typename T>
 struct default_priority {
@@ -24,12 +16,32 @@ struct default_priority {
 
 template <typename T, typename P=default_priority<T> >
 struct calendar_queue {
+	struct event {
+		event(size_t index) {
+			next = nullptr;
+			prev = nullptr;
+			this->index = index;
+		}
+
+		~event() {
+		}
+
+		T value;
+		size_t index;
+
+		event *next;
+		event *prev;
+	};
+
 	P priority;
 
 	uint64_t count;
 	uint64_t now;
 
-	std::vector<std::vector<T> > calendar;
+	std::deque<event> events;
+	event *unused;
+
+	std::vector<std::pair<event*, event*> > calendar;
 
 	// bit shift amounts
 	int year;
@@ -43,7 +55,48 @@ struct calendar_queue {
 		this->year = year;
 		this->day = year < mindiff ? 0 : year-mindiff;
 		this->priority = priority;
-		calendar.resize(days());
+		this->unused = nullptr;
+		calendar.resize(days(), std::pair<event*, event*>(nullptr, nullptr));
+	}
+
+	calendar_queue(const calendar_queue &q) {
+		count = q.count;
+		now = q.now;
+		events = q.events;
+		for (auto e = events.begin(); e != events.end(); e++) {
+			if (e->next != nullptr) {
+				e->next = &events[e->next->index];
+			}
+			if (e->prev != nullptr) {
+				e->prev = &events[e->prev->index];
+			}
+		}
+		unused = nullptr;
+		if (q.unused != nullptr) {
+			unused = &events[q.unused->index];
+			unused->prev = nullptr;
+		}
+		event u = unused;
+		for (event *e = q.unused->next; e != nullptr; e = e->next) {
+			u->next = &events[e->index];
+			u->next->prev = u;
+			u = u->next;
+		}
+		u->next = nullptr;
+
+		calendar = q.calendar;
+		for (auto d = calendar.begin(); d != calendar.end(); d++) {
+			if (d->first != nullptr) {
+				d->first = &events[d->first->index];
+			}
+			if (d->second != nullptr) {
+				d->second = &events[d->second->index];
+			}
+		}
+
+		year = q.year;
+		day = q.day;
+		mindiff = q.mindiff;
 	}
 
 	~calendar_queue() {
@@ -67,274 +120,332 @@ struct calendar_queue {
 
 	void shrink() {
 		for (int i = 0; i < (int)calendar.size(); i+=2) {
-			/*uint64_t f0, f1, f2;
-			f0 = calendar[i].size();
-			f1 = calendar[i+1].size();
-			if (not is_sorted(calendar[i].begin(), calendar[i].end())) {
-				printf("shrink fo0\n");
-			}
-			if (not is_sorted(calendar[i+1].begin(), calendar[i+1].end())) {
-				printf("shrink fo1\n");
-			}*/
-
 			// merge calendar[i] and calendar[i+1]
-			if (calendar[i].empty()) {
+			if (calendar[i].second == nullptr) {
 				calendar[i] = calendar[i+1];
-			} else if (not calendar[i+1].empty()) {
-				auto e0 = calendar[i].rbegin();
-				auto e1 = calendar[i+1].rbegin();
-				uint64_t y0 = yearof(priority(*e0));
-				uint64_t y1 = yearof(priority(*e1));
-				uint64_t sy0 = yearof(priority(calendar[i][0]));
-				uint64_t sy1 = yearof(priority(calendar[i+1][0]));
-				while (e1 != calendar[i+1].rend()) {
+			} else if (calendar[i+1].first != nullptr) {
+				event *e0 = calendar[i].second;
+				event *e1 = calendar[i+1].second;
+				uint64_t y0 = yearof(priority(e0->value));
+				uint64_t y1 = yearof(priority(e1->value));
+				uint64_t sy0 = yearof(priority(calendar[i].first->value));
+				uint64_t sy1 = yearof(priority(calendar[i+1].first->value));
+				while (e1 != nullptr) {
 					if (y0 <= y1) {
-						auto s1 = calendar[i+1].rend();
-						if (y1 != sy1 and e0 != calendar[i].rend()) {
+						event *s1 = nullptr;
+						if (y1 != sy1 and e0 != nullptr) {
 							// if most events are in the same year, then we don't need to do
 							// this search most of the time.
 							// if e0 is nullptr, then we can move the entire list over
-							for (s1 = e1+1; s1 != calendar[i+1].rend() and yearof(priority(*s1)) == y1; s1++);
+							for (s1 = e1->prev; s1 != nullptr and yearof(priority(s1->value)) == y1; s1 = s1->prev);
 						}
 						// by definition, e1 will not be nullptr because there would be
 						// nothing to move over
 						
-						calendar[i].insert(e0.base(), s1.base(), e1.base());
+						if (s1 == nullptr) {
+							calendar[i+1].first->prev = e0;
+						} /*else if (s1->next == nullptr) {
+							// this shouldn't happen by definition of s1
+						}*/ else if (s1->next != nullptr) {
+							s1->next->prev = e0;
+						}
+
+						event *n = calendar[i].first;
+						if (e0 == nullptr) {
+							calendar[i].first->prev = e1;
+						} else if (e0->next == nullptr) {
+							calendar[i].second = e1;
+						} else {
+							e0->next->prev = e1;
+						}
+
+						/*if (e1->next == nullptr) {
+							// already end of list, nothing needs to happen here
+						} else */ if (e1->next != nullptr) {
+							e1->next->prev = nullptr;
+						}
+
+						if (e0 == nullptr) {
+							// this is broken
+							e1->next = n;
+							calendar[i].first = (s1 == nullptr ? calendar[i+1].first : s1->next);
+						} else {
+							e1->next = e0->next;
+							e0->next = (s1 == nullptr ? calendar[i+1].first : s1->next);
+						}
+
+						if (s1 != nullptr) {
+							s1->next = nullptr;
+						}
 
 						e1 = s1;
-						if (e1 != calendar[i+1].rend()) {
-							y1 = yearof(priority(*e1));
+						if (e1 != nullptr) {
+							y1 = yearof(priority(e1->value));
 						}
 					} else if (y0 != sy0) {
-						for (e0++; e0 != calendar[i].rend() and yearof(priority(*e0)) == y0; e0++);
-						y0 = yearof(priority(*e0));
+						for (e0 = e0->prev; e0 != nullptr and yearof(priority(e0->value)) == y0; e0 = e0->prev);
+						y0 = yearof(priority(e0->value));
 					} else {
-						e0 = calendar[i].rend();
+						e0 = nullptr;
 					}
 				}
 			}
-			calendar[i+1].clear();
+			calendar[i+1].first = nullptr;
+			calendar[i+1].second = nullptr;
 
 			if (i != 0) {
 				calendar[i/2] = calendar[i];
 			}
-
-			/*f2 = calendar[i/2].size();
-			if (f0+f1 != f2) {
-				printf("shrink f0:%lu f1:%lu f2:%lu\n", f0, f1, f2);
-			}
-			if (not is_sorted(calendar[i/2].begin(), calendar[i/2].end())) {
-				printf("shrink fo2\n");
-			}*/
 		}
 		day++;
 		calendar.erase(calendar.begin()+days(), calendar.end());
-		printf("shrinking %lu\n", days());
 	}
 
 	void grow() {
 		day--;
-		printf("growing %lu\n", days());
-		calendar.resize(days());
+		calendar.resize(days(), std::pair<event*, event*>(nullptr, nullptr));
 		for (int i = (int)calendar.size()-1; i >= 0; i--) {
-
-			/*uint64_t f0, f1, f2;
-			f0 = calendar[i].size();
-			if (not is_sorted(calendar[i].begin(), calendar[i].end())) {
-				printf("grow fo0\n");
-			}*/
-
-			if (calendar[i].empty()) {
+			if (calendar[i].first == nullptr) {
 				continue;
 			}
 			if (i != 0) {
 				calendar[i*2] = calendar[i];
 			}
 
-			auto e = calendar[i*2].rbegin();
-			uint64_t y0 = yearof(priority(calendar[i*2][0]));
-			uint64_t t = priority(*e);
+			event *e = calendar[i*2].second;
+			uint64_t y0 = yearof(priority(calendar[i*2].first->value));
+			uint64_t t = priority(e->value);
 			uint64_t y = yearof(t);
 			uint64_t d = dayof(t);
-			while (e != calendar[i*2].rend() and (y > y0 or d != i*2)) {
-				while (e != calendar[i*2].rend() and d == i*2) {
-					e++;
-					if (e != calendar[i*2].rend()) {
-						t = priority(*e);
+			while (e != nullptr and (y > y0 or d != i*2)) {
+				while (e != nullptr and d == i*2) {
+					e = e->prev;
+					if (e != nullptr) {
+						t = priority(e->value);
 						y = yearof(t);
 						d = dayof(t);
 						if (y == y0 and d == i*2) {
-							e = calendar[i*2].rend();
+							e = nullptr;
 						}
 					}
 				}
-				if (e == calendar[i*2].rend()) {
+				if (e == nullptr) {
 					break;
 				}
 
-				auto s = e;
-				while (s != calendar[i*2].rend() and dayof(priority(*s)) == d) {
-					s++;
+				event *s = e;
+				while (s != nullptr and dayof(priority(s->value)) == d) {
+					s = s->prev;
 				}
 
-				calendar[i*2+1].insert(calendar[i*2+1].begin(), s.base(), e.base());
-				calendar[i*2].erase(s.base(), e.base());
+				if (e->next == nullptr) {
+					calendar[i*2].second = s;
+				} else {
+					e->next->prev = s;
+				}
+				/*if (s == nullptr) {
+					// Then calendar[i*2].first->prev is already nullptr
+				} else*/ if (s != nullptr) {
+					s->next->prev = nullptr;
+				}
+
+				event *n = e->next;
+				e->next = calendar[i*2+1].first;
+				
+				if (s == nullptr) {
+					calendar[i*2+1].first = calendar[i*2].first;
+				} else {
+					calendar[i*2+1].first = s->next;
+				}
+
+				if (e->next == nullptr) {
+					calendar[i*2+1].second = e;
+				} else {
+					e->next->prev = e;
+				}
+
+				if (s == nullptr) {
+					calendar[i*2].first = n;
+				} else {
+					s->next = n;
+				}
 
 				e = s;
-				if (e != calendar[i*2].rend()) {
-					t = priority(*e);
+				if (e != nullptr) {
+					t = priority(e->value);
 					y = yearof(t);
 					d = dayof(t);
 				}
 			}
 
 			if (i != 0) {
-				calendar[i].clear();
+				calendar[i].first = nullptr;
+				calendar[i].second = nullptr;
 			}
-
-			/*f1 = calendar[i*2].size();
-			f2 = calendar[i*2+1].size();
-			if (f1+f2 != f0) {
-				printf("grow f0:%lu f1:%lu f2:%lu\n", f0, f1, f2);
-			}
-			if (not is_sorted(calendar[i*2].begin(), calendar[i*2].end())) {
-				printf("grow fo1\n");
-			}
-			if (not is_sorted(calendar[i*2+1].begin(), calendar[i*2+1].end())) {
-				printf("grow fo2\n");
-			}*/
 		}
 	}
 
-	typename std::vector<T>::iterator find(uint64_t day, uint64_t time) {
-		auto e = calendar[day].begin();
-		while (e != calendar[day].end() and priority(*e) < time) { e++; }
-		return e;
-	}
+	event *next(uint64_t time) {
+		if (empty()) {
+			return nullptr;
+		}
 
-	std::pair<int, typename std::vector<T>::iterator> next(uint64_t time) {
 		auto start = calendar.begin()+dayof(time);
 		int y = yearof(time);
-		auto m = calendar.back().end();
-		uint64_t mt = std::numeric_limits<uint64_t>::max();
-		auto md = calendar.end();
-		for (auto di = start; di != calendar.end(); di++) {
-			for (auto e = di->begin(); e != di->end(); e++) {
-				uint64_t et = priority(*e);
-				if (et >= time) {
-					if (yearof(et) == y) {
-						return std::pair<int, typename std::vector<T>::iterator>(di-calendar.begin(), e);
-					}
+		event *m = nullptr;
+		uint64_t mt;
+		for (auto day = start; day != calendar.end(); day++) {
+			event *e = day->first;
+			while (e != nullptr and priority(e->value) < time) {
+				e = e->next;
+			}
+			if (e != nullptr) {
+				uint64_t et = priority(e->value);
+				if (yearof(et) == y) {
+					return e;
+				}
 
-					if (et < mt) {
-						m = e;
-						mt = et;
-						md = di;
-					}
-					break;
+				if (m == nullptr or et < mt) {
+					m = e;
+					mt = et;
 				}
 			}
 		}
 		y++;
 
-		for (auto di = calendar.begin(); di != start; di++) {
-			for (auto e = di->begin(); e != di->end(); e++) {
-				uint64_t et = priority(*e);
-				if (yearof(et) == y) {
-					return std::pair<int, typename std::vector<T>::iterator>(di-calendar.begin(), e);
-				}
+		for (auto day = calendar.begin(); day != start; day++) {
+			event *e = day->first;
+			while (e != nullptr and priority(e->value) < time) {
+				e = e->next;
+			}
 
-				if (et < mt) {
+			if (e != nullptr) {
+				uint64_t et = priority(e->value);
+				if (yearof(et) == y) {
+					return e;
+				}
+				if (m == nullptr or et < mt) {
 					m = e;
 					mt = et;
-					md = di;
 				}
-				break;
 			}
 		}
 		
-		return std::pair<int, typename std::vector<T>::iterator>(md-calendar.begin(), m);
+		return m;
 	}
 
-	void set(typename std::vector<T>::iterator e, T value) {
-		if (priority(value) < priority(*e)) {
-			calendar[dayof(*e)].erase(e);
-			uint64_t t = priority(value);
-			uint64_t d = dayof(t);
-			auto n = calendar[d].begin();
-			while (n != calendar[d].end() and priority(*n) < t) { n++; }
-			calendar[d].insert(n, e);
-			if (t < now) {
-				now = t;
-			}
-		}
-	}
-
-	std::pair<int, typename std::vector<T>::iterator> push(T value) {
-		uint64_t t = priority(value);
+	void add(event *e) {
+		uint64_t t = priority(e->value);
 		uint64_t d = dayof(t);
 
-		/*uint64_t f0, f1;
-		f0 = calendar[d].size();
-		if (not is_sorted(calendar[d].begin(), calendar[d].end())) {
-			printf("push fo0\n");
-		}*/
+		event *n = calendar[d].first;
+		while (n != nullptr and priority(n->value) < t) {
+			n = n->next;
+		}
 
-		auto n = calendar[d].begin();
-		while (n != calendar[d].end() and priority(*n) < t) { n++; }
-
-		auto result = calendar[d].insert(n, value);
+		if (n == nullptr) {
+			if (calendar[d].second == nullptr) {
+				calendar[d].first = e;
+				calendar[d].second = e;
+			} else {
+				calendar[d].second->next = e;
+				e->prev = calendar[d].second;
+				calendar[d].second = e;
+			}
+		} else {
+			e->prev = n->prev;
+			e->next = n;
+			if (n->prev == nullptr) {
+				calendar[d].first = e;
+			} else {
+				n->prev->next = e;
+			}
+			n->prev = e;
+		}
 		if (t < now) {
 			now = t;
 		}
 		count++;
-		
-		/*f1 = calendar[d].size();
-		if (f1 != f0+1) {
-			printf("push f0:%lu f1:%lu\n", f0, f1);
-		}
-		if (not is_sorted(calendar[d].begin(), calendar[d].end())) {
-			printf("push fo1\n");
-		}*/
+	}
 
+	event *rem(event *e) {
+		if (e == nullptr) {
+			return nullptr;
+		}
+
+		uint64_t d = dayof(priority(e->value));
+		if (e->prev == nullptr) {
+			calendar[d].first = e->next;
+		} else {
+			e->prev->next = e->next;
+		}
+
+		if (e->next == nullptr) {
+			calendar[d].second = e->prev;
+		} else {
+			e->next->prev = e->prev;
+		}
+		e->next = nullptr;
+		e->prev = nullptr;
+		count--;
+		return e;
+	}
+
+	void set(event *e, T value) {
+		if (priority(value) < priority(e->value)) {
+			e->value = value;
+			add(rem(e));
+		}
+	}
+
+	event *push(T value) {
+		event *result = nullptr;
+		if (unused != nullptr) {
+			result = unused;
+			unused = unused->next;
+			if (unused != nullptr) {
+				unused->prev = nullptr;
+			}
+			result->next = nullptr;
+		} else {
+			events.push_back(event(events.size()));
+			result = &events.back();
+		}
+
+		result->value = value;
+		add(result);
 		if (day > 0 and count > (days()<<1)) {
 			grow();
 		}
-		return std::pair<int, typename std::vector<T>::iterator>(d, result);
+		return result;
+	}
+
+	T pop(event *e) {
+		e = rem(e);
+		if (e == nullptr) {
+			return T();
+		}
+		e->next = unused;
+		e->prev = nullptr;
+		if (unused != nullptr) {
+			unused->prev = e;
+		}
+		unused = e;
+		if (year-day > mindiff and count < (days()>>1)) {
+			shrink();
+		}
+		return e->value;
 	}
 
 	T pop(uint64_t time=std::numeric_limits<uint64_t>::max()) {
 		if (time == std::numeric_limits<uint64_t>::max()) {
 			time = now;
 		}
-
-		auto e = next(time);
-
-		/*uint64_t f0, f1;
-		f0 = calendar[e.first].size();
-		if (not is_sorted(calendar[e.first].begin(), calendar[e.first].end())) {
-			printf("pop fo0\n");
-		}*/
-
-		T value = *e.second;
-		if (time == now) {
-			now = priority(value);
+		event *e = next(time);
+		if (time == now and e != nullptr) {
+			now = priority(e->value);
 		}
-		calendar[e.first].erase(e.second);
-		count--;
-
-		/*f1 = calendar[e.first].size();
-		if (f1 != f0-1) {
-			printf("pop f0:%lu f1:%lu\n", f0, f1);
-		}
-		if (not is_sorted(calendar[e.first].begin(), calendar[e.first].end())) {
-			printf("pop fo1\n");
-		}*/
-
-		if (year-day > mindiff and count < (days()>>1)) {
-			shrink();
-		}
-		return value;
+		return pop(e);
 	}
 
 	uint64_t size() {
