@@ -294,39 +294,37 @@ struct calendar_queue {
 		int y = yearof(time);
 		event *m = nullptr;
 		uint64_t mt;
-		for (auto day = start; day != calendar.end(); day++) {
-			event *e = day->first;
-			while (e != nullptr and priority(e->value) < time) {
-				e = e->next;
-			}
-			if (e != nullptr) {
+		for (auto di = start; di != calendar.end(); di++) {
+			for (event *e = di->first; e != nullptr; e = e->next) {
 				uint64_t et = priority(e->value);
-				if (yearof(et) == y) {
-					return e;
-				}
+				if (et >= time) {
+					if (yearof(et) == y) {
+						return e;
+					}
 
-				if (m == nullptr or et < mt) {
-					m = e;
-					mt = et;
+					if (m == nullptr or et < mt) {
+						m = e;
+						mt = et;
+					}
+					break;
 				}
 			}
 		}
 		y++;
 
-		for (auto day = calendar.begin(); day != start; day++) {
-			event *e = day->first;
-			while (e != nullptr and priority(e->value) < time) {
-				e = e->next;
-			}
-
-			if (e != nullptr) {
+		for (auto di = calendar.begin(); di != start; di++) {
+			for (event *e = di->first; e != nullptr; e = e->next) {
 				uint64_t et = priority(e->value);
-				if (yearof(et) == y) {
-					return e;
-				}
-				if (m == nullptr or et < mt) {
-					m = e;
-					mt = et;
+				if (et >= time) {
+					if (yearof(et) == y) {
+						return e;
+					}
+
+					if (m == nullptr or et < mt) {
+						m = e;
+						mt = et;
+					}
+					break;
 				}
 			}
 		}
