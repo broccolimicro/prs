@@ -7,6 +7,20 @@
 
 #include <stdio.h>
 
+// This version slows down over time. Everything is implemented to be O(1) or
+// amortized O(1) time, and it's not slowing down in relation to the number of
+// elements, but just over usage time. My current guess is that in the
+// beginning, the backing container (deque) is first allocated and elements are
+// taken in order to place in the calendar. However, as elements are added and
+// removed, those memory locations become shuffled. This causes more and more
+// cache misses over time, slowing down the push and pop latencies.
+
+// The other guess is that maybe my list merge, split, remove, and insert
+// operators are buggy and resulting in lists that are out of order. As a
+// result of this, more and more nodes are out of order in their days resulting
+// in more and more lookups that have to scan the entire queue. I'll be testing
+// for this first.
+
 template <typename T>
 struct default_priority {
 	uint64_t operator()(const T &value) {
