@@ -15,12 +15,6 @@
 // removed, those memory locations become shuffled. This causes more and more
 // cache misses over time, slowing down the push and pop latencies.
 
-// The other guess is that maybe my list merge, split, remove, and insert
-// operators are buggy and resulting in lists that are out of order. As a
-// result of this, more and more nodes are out of order in their days resulting
-// in more and more lookups that have to scan the entire queue. I'll be testing
-// for this first.
-
 template <typename T>
 struct default_priority {
 	uint64_t operator()(const T &value) {
@@ -139,11 +133,24 @@ struct calendar_queue {
 
 	void shrink() {
 		for (int i = 0; i < (int)calendar.size(); i+=2) {
-			/*uint64_t f0, f1, f2, r0, r1, r2;
+			uint64_t f0, f1, f2, r0, r1, r2;
 			f0 = flength(i);
 			r0 = rlength(i);
 			f1 = flength(i+1);
-			r1 = rlength(i+1);*/
+			r1 = rlength(i+1);
+			if (not forder(i)) {
+				printf("shrink fo0\n");
+			}
+			if (not rorder(i)) {
+				printf("shrink ro0\n");
+			}
+			if (not forder(i+1)) {
+				printf("shrink fo1\n");
+			}
+			if (not rorder(i+1)) {
+				printf("shrink ro1\n");
+			}
+
 
 			// merge calendar[i] and calendar[i+1]
 			if (calendar[i].second == nullptr) {
@@ -222,11 +229,17 @@ struct calendar_queue {
 				calendar[i/2] = calendar[i];
 			}
 
-			/*f2 = flength(i/2);
+			f2 = flength(i/2);
 			r2 = rlength(i/2);
 			if (f0 != r0 or f1 != r1 or f2 != r2 or f0+f1 != f2 or r0+r1 != r2) {
 				printf("shrink f0:%lu r0:%lu f1:%lu r1:%lu f2:%lu r2:%lu\n", f0, r0, f1, r1, f2, r2);
-			}*/
+			}
+			if (not forder(i/2)) {
+				printf("shrink fo2\n");
+			}
+			if (not rorder(i/2)) {
+				printf("shrink ro2\n");
+			}
 		}
 		day++;
 		calendar.erase(calendar.begin()+days(), calendar.end());
@@ -239,9 +252,16 @@ struct calendar_queue {
 		calendar.resize(days(), std::pair<event*, event*>(nullptr, nullptr));
 		for (int i = (int)calendar.size()-1; i >= 0; i--) {
 
-			/*uint64_t f0, f1, f2, r0, r1, r2;
+			uint64_t f0, f1, f2, r0, r1, r2;
 			f0 = flength(i);
-			r0 = rlength(i);*/
+			r0 = rlength(i);
+			if (not forder(i)) {
+				printf("grow fo0\n");
+			}
+			if (not rorder(i)) {
+				printf("grow ro0\n");
+			}
+
 
 			if (calendar[i].first == nullptr) {
 				continue;
@@ -321,13 +341,25 @@ struct calendar_queue {
 				calendar[i].second = nullptr;
 			}
 
-			/*f1 = flength(i*2);
+			f1 = flength(i*2);
 			r1 = rlength(i*2);
 			f2 = flength(i*2+1);
 			r2 = rlength(i*2+1);
 			if (f0 != r0 or f1 != r1 or f2 != r2 or f1+f2 != f0 or r1+r2 != r0) {
 				printf("grow f0:%lu r0:%lu f1:%lu r1:%lu f2:%lu r2:%lu\n", f0, r0, f1, r1, f2, r2);
-			}*/
+			}
+			if (not forder(i*2)) {
+				printf("grow fo1\n");
+			}
+			if (not rorder(i*2)) {
+				printf("grow ro1\n");
+			}
+			if (not forder(i*2+1)) {
+				printf("grow fo2\n");
+			}
+			if (not rorder(i*2+1)) {
+				printf("grow ro2\n");
+			}
 		}
 	}
 
@@ -411,9 +443,15 @@ struct calendar_queue {
 		uint64_t t = priority(e->value);
 		uint64_t d = dayof(t);
 
-		/*uint64_t f0, f1, r0, r1;
+		uint64_t f0, f1, r0, r1;
 		f0 = flength(d);
-		r0 = rlength(d);*/
+		r0 = rlength(d);
+		if (not forder(d)) {
+			printf("add fo0\n");
+		}
+		if (not rorder(d)) {
+			printf("add ro0\n");
+		}
 
 		//event *n = find(d, t);
 		event *n = calendar[d].first;
@@ -445,12 +483,17 @@ struct calendar_queue {
 		}
 		count++;
 		
-		/*f1 = flength(d);
+		f1 = flength(d);
 		r1 = rlength(d);
 		if (f0 != r0 or f1 != r1 or f1 != f0+1 or r1 != r0+1) {
 			printf("add f0:%lu r0:%lu f1:%lu r1:%lu\n", f0, r0, f1, r1);
-		}*/
-
+		}
+		if (not forder(d)) {
+			printf("add fo1\n");
+		}
+		if (not rorder(d)) {
+			printf("add ro1\n");
+		}
 	}
 
 	event *rem(event *e) {
@@ -459,9 +502,16 @@ struct calendar_queue {
 		}
 
 		uint64_t d = dayof(priority(e->value));
-		/*uint64_t f0, f1, r0, r1;
+		uint64_t f0, f1, r0, r1;
 		f0 = flength(d);
-		r0 = rlength(d);*/
+		r0 = rlength(d);
+		if (not forder(d)) {
+			printf("rem fo0\n");
+		}
+		if (not rorder(d)) {
+			printf("rem ro0\n");
+		}
+
 		if (e->prev == nullptr) {
 			calendar[d].first = e->next;
 		} else {
@@ -476,11 +526,18 @@ struct calendar_queue {
 		e->next = nullptr;
 		e->prev = nullptr;
 		count--;
-		/*f1 = flength(d);
+		f1 = flength(d);
 		r1 = rlength(d);
 		if (f0 != r0 or f1 != r1 or f1 != f0-1 or r1 != r0-1) {
 			printf("rem f0:%lu r0:%lu f1:%lu r1:%lu\n", f0, r0, f1, r1);
-		}*/
+		}
+		if (not forder(d)) {
+			printf("rem fo1\n");
+		}
+		if (not rorder(d)) {
+			printf("rem ro1\n");
+		}
+
 		return e;
 	}
 
@@ -574,6 +631,28 @@ struct calendar_queue {
 			result++;
 		}
 		return result;
+	}
+
+	bool forder(int d) {
+		uint64_t previous = 0;
+		for (event *e = calendar[d].first; e != nullptr; e = e->next) {
+			if (priority(e->value) < previous) {
+				return false;
+			}
+			previous = priority(e->value);
+		}
+		return true;
+	}
+
+	bool rorder(int d) {
+		uint64_t previous = std::numeric_limits<uint64_t>::max();
+		for (event *e = calendar[d].second; e != nullptr; e = e->prev) {
+			if (priority(e->value) > previous) {
+				return false;
+			}
+			previous = priority(e->value);
+		}
+		return true;
 	}
 
 	bool empty() {
