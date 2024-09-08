@@ -4,10 +4,10 @@ A library for the manupulation and simulation of production rules.
 
 ## License
 
-Licensed by Cornell University under GNU GPL v3.
+Licensed by Broccoli, LLC under GNU GPL v3.
 
 Written by Ned Bingham.
-Copyright © 2020 Cornell University.
+Copyright © 2020 Broccoli, LLC.
 
 Haystack is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
