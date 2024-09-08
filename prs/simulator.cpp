@@ -20,10 +20,6 @@ enabled_transition::enabled_transition(int dev, int value, uint64_t fire_at) {
 enabled_transition::~enabled_transition() {
 }
 
-enabled_transition::operator uint64_t() const {
-	return fire_at;
-}
-
 bool operator<(enabled_transition t0, enabled_transition t1) {
 	return t0.fire_at < t1.fire_at;
 }
@@ -78,7 +74,8 @@ void simulator::schedule(int dev, int value) {
 		devs[dev] = enabled.push(enabled_transition(dev, value, fire_at));
 	} else {
 		// TODO(edward.bingham) flag instability
-		enabled.set(devs[dev], enabled_transition(dev, ((devs[dev]->value+1)&(value+1))-1, fire_at));
+		//enabled.set(devs[dev], enabled_transition(dev, ((devs[dev]->value+1)&(value+1))-1, fire_at));
+		devs[dev]->value.value = ((devs[dev]->value.value+1)&(value+1))-1;
 	}
 }
 
@@ -116,15 +113,19 @@ void simulator::evaluate(deque<int> nets) {
 	boolean::cube guard;
 	while (not q.empty()) {
 		int net = q.front();
+		int uid = base->uid(net);
 		q.pop_front();
 
 		int glitch_value = 3;
 		int glitch_strength = 0;
 		int drive_strength = 0;
 		int value = 3;
-		int uid = base->uid(net);
+		if (base->at(net).keep) {
+			drive_strength = 1;
+			value = encoding.get(uid)+1;
+		}
 		boolean::cube guard_action;
-		cout << "evaluating " << net << "/(" << base->flip(base->nodes.size()) << "," << base->nets.size() << ") " << export_variable_name(net, *variables).to_string() << endl;
+		//cout << "evaluating " << net << "/(" << base->flip(base->nodes.size()) << "," << base->nets.size() << ") " << export_variable_name(net, *variables).to_string() << (base->at(net).keep ? " keep" : "") << endl;
 		for (int driver = 0; driver < 2; driver++) {
 			for (auto i = base->at(net).drainOf[driver].begin(); i != base->at(net).drainOf[driver].end(); i++) {
 				auto dev = base->devs.begin()+*i;
@@ -144,67 +145,71 @@ void simulator::evaluate(deque<int> nets) {
 					source_strength = 2;
 				}
 
-				cout << "\t@" << export_variable_name(dev->source, *variables).to_string() << ":" << source_value-1 << "&" << (dev->threshold==0 ? "~" : "") << export_variable_name(dev->gate, *variables).to_string() << ":" << local_value << "->" << export_variable_name(dev->drain, *variables).to_string() << (dev->driver==0 ? "-" : "+");
+				//cout << "\t@" << export_variable_name(dev->source, *variables).to_string() << ":" << source_value-1 << "*" << source_strength << "&" << (dev->threshold==0 ? "~" : "") << export_variable_name(dev->gate, *variables).to_string() << ":" << local_value << "->" << export_variable_name(dev->drain, *variables).to_string() << (dev->driver==0 ? "-" : "+") << "*" << drive_strength;
 
 
 				if (local_value == dev->threshold or (local_value == 2 and global_value == dev->threshold)) {
 					if (source_value == 3 or drive_strength > source_strength) {
 						// undriven
 						// TODO(edward.bingham) consider for backprop
-						cout << "\tundriven" << endl;
+						//cout << "\tundriven" << endl;
 						continue;
 					} else if (drive_strength < source_strength) {
 						// device is driving net stronger than other devices
 						value = source_value;
 						drive_strength = source_strength;
-						cout << "\tstronger" << endl;
+						//cout << "\tstronger" << endl;
 					} else /*if (drive_strength == source_strength)*/ {
 						value &= source_value;
-						cout << "\tdriven" << endl;
+						//cout << "\tdriven" << endl;
 					}
 					guard_action.set(gate_uid, global_value);
 				} /*else if (local_value == 1-dev->threshold) {
 					// this device is disabled, value remains unaffected
 					// TODO(edward.bingham) check instability?
-				}*/ else if (local_value == 2 and global_value == 1-dev->threshold) {
+				}*/ else if ((local_value == 2 and global_value == 1-dev->threshold) or local_value == -1 or global_value == -1) {
 					// instability
 					if (source_strength > glitch_strength) {
 						glitch_value = source_value;
 						glitch_strength = source_strength;
-						cout << "\tstronger glitch" << endl;
+						//cout << "\tstronger glitch" << endl;
 					} else if (source_strength == glitch_strength) {
 						glitch_value &= source_value;
-						cout << "\tglitch" << endl;
+						//cout << "\tglitch" << endl;
 					} else {
-						cout << "\tweaker" << endl;
+						//cout << "\tweaker" << endl;
 					}
 					guard_action.set(gate_uid, global_value);
 				} else {
-					cout << "\tdisabled" << endl;
+					//cout << "\tdisabled" << endl;
 				}
 			}
 		}
 
-		cout << "\tfinal value = ";
+		int prev_value = encoding.get(uid);
+		int prev_strength = 2-strength.get(uid);
+
+		//cout << "\tfinal value = ";
 		bool stable = true;
-		if (glitch_strength >= drive_strength and ((glitch_value != 3 and glitch_value != value) or glitch_value == 0)) {
+		if (glitch_strength >= drive_strength and ((glitch_value != 3 and glitch_value != value and glitch_value != prev_value+1 and prev_value != -1) or glitch_value == 0)) {
+			error("", "unstable rule " + export_variable_name(net, *variables).to_string() + "~", __FILE__, __LINE__);
 			// This net is unstable
 			value &= glitch_value;
 			drive_strength = glitch_strength;
 			stable = false;
 			// TODO(edward.bingham) flag an error
-			cout << "unstable ";
+			//cout << "unstable ";
+			// TODO(edward.bingham) schedule another event to resolve the glitch?
+			
 		}
-
 		value -= 1;
-		cout << value << " strength = " << drive_strength << endl;
+		//cout << value << " strength = " << drive_strength << endl;
 
 		if (value >= 0) {
 			guard &= guard_action;
 		}
-		int prev_value = encoding.get(uid);
-		int prev_strength = 2-strength.get(uid);
-		cout << "\tprev value = " << prev_value << " strength = " << prev_strength << endl;
+
+		//cout << "\tprev value = " << prev_value << " strength = " << prev_strength << endl;
 		bool vacuous = false;
 		if (value == prev_value) {
 			if (drive_strength == prev_strength) {
@@ -218,12 +223,17 @@ void simulator::evaluate(deque<int> nets) {
 		global.set(uid, value);
 		strength.set(uid, 2-drive_strength);
 		for (auto rem = base->at(net).remote.begin(); rem != base->at(net).remote.end(); rem++) {
+			if (*rem == net) {
+				continue;
+			}
 			global.set(*rem, value);
 			encoding.remote_set(*rem, value, stable);
 			strength.set(*rem, 2-drive_strength);
 		}
 
-		propagate(q, net, vacuous);
+		for (auto rem = base->at(net).remote.begin(); rem != base->at(net).remote.end(); rem++) {
+			propagate(q, *rem, vacuous);
+		}
 	}
 
 	encoding &= guard;
@@ -258,7 +268,11 @@ void simulator::set(int net, int val) {
 
 	global.set(net, val);
 	encoding.set(net, val);
+	strength.set(net, -1);
 	for (auto i = base->at(net).remote.begin(); i != base->at(net).remote.end(); i++) {
+		if (*i == net) {
+			continue;
+		}
 		global.set(*i, val);
 		encoding.remote_set(*i, val);
 		strength.set(*i, -1);

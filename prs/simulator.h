@@ -15,8 +15,12 @@ struct enabled_transition {
 	int dev;
 	int value;
 	uint64_t fire_at;
+};
 
-	operator uint64_t() const;
+struct enabled_priority {
+	uint64_t operator()(const enabled_transition &value) {
+		return value.fire_at;
+	}
 };
 
 bool operator<(enabled_transition t0, enabled_transition t1);
@@ -27,7 +31,7 @@ struct simulator {
 	simulator(const production_rule_set *base, const ucs::variable_set *variables);
 	~simulator();
 
-	using queue=calendar_queue<enabled_transition>;
+	using queue=calendar_queue<enabled_transition, enabled_priority>;
 
 	const production_rule_set *base;
 	const ucs::variable_set *variables;

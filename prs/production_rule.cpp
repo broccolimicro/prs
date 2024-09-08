@@ -47,7 +47,8 @@ device::device(int source, int gate, int drain, int threshold, int driver, attri
 device::~device() {
 }
 
-net::net() {
+net::net(bool keep) {
+	this->keep = keep;
 }
 
 net::~net() {
@@ -107,7 +108,7 @@ const net &production_rule_set::at(int index) const {
 	return nodes[flip(index)];
 }
 
-net &production_rule_set::create(int index) {
+net &production_rule_set::create(int index, bool keep) {
 	if (index >= 0) {
 		int sz = (int)nets.size();
 		if (index >= sz) {
@@ -115,6 +116,9 @@ net &production_rule_set::create(int index) {
 			for (int i = sz; i < (int)nets.size(); i++) {
 				nets[i].add_remote(i);
 			}
+		}
+		if (keep) {
+			nets[index].keep = true;
 		}
 		return nets[index];
 	}
@@ -125,6 +129,9 @@ net &production_rule_set::create(int index) {
 		for (int i = sz; i < (int)nodes.size(); i++) {
 			nodes[i].add_remote(flip(i));
 		}
+	}
+	if (keep) {
+		nodes[index].keep = true;
 	}
 	return nodes[index];
 }
@@ -156,11 +163,10 @@ void production_rule_set::connect_remote(int n0, int n1) {
 }
 
 int production_rule_set::connect(int n0, int n1) {
-	if (n1 >= (int)nets.size()) {
-		nets.resize(n1+1);
-	}
-
-	if (n0 == n1) {
+	create(n1);
+	if (n0 == n1
+		or (n0 >= 0 and n0 >= (int)nets.size())
+		or (n0 < 0 and flip(n0) >= (int)nodes.size())) {
 		return n1;
 	}
 
@@ -238,16 +244,16 @@ int production_rule_set::connect(int n0, int n1) {
 	at(n1).remote.insert(at(n1).remote.end(), at(n0).remote.begin(), at(n0).remote.end());
 	sort(at(n1).remote.begin(), at(n1).remote.end());
 	at(n1).remote.erase(unique(at(n1).remote.begin(), at(n1).remote.end()), at(n1).remote.end());
-	for (int i = 0; i < 2; i++) {
-		at(n1).gateOf[i].insert(at(n1).gateOf[i].end(), at(n0).gateOf[i].begin(), at(n0).gateOf[i].end());
-		sort(at(n1).gateOf[i].begin(), at(n1).gateOf[i].end());
-		at(n1).gateOf[i].erase(unique(at(n1).gateOf[i].begin(), at(n1).gateOf[i].end()), at(n1).gateOf[i].end());
-		at(n1).drainOf[i].insert(at(n1).drainOf[i].end(), at(n0).drainOf[i].begin(), at(n0).drainOf[i].end());
-		sort(at(n1).drainOf[i].begin(), at(n1).drainOf[i].end());
-		at(n1).drainOf[i].erase(unique(at(n1).drainOf[i].begin(), at(n1).drainOf[i].end()), at(n1).drainOf[i].end());
-		at(n1).sourceOf[i].insert(at(n1).sourceOf[i].end(), at(n0).sourceOf[i].begin(), at(n0).sourceOf[i].end());
-		sort(at(n1).sourceOf[i].begin(), at(n1).sourceOf[i].end());
-		at(n1).sourceOf[i].erase(unique(at(n1).sourceOf[i].begin(), at(n1).sourceOf[i].end()), at(n1).sourceOf[i].end());
+	for (int j = 0; j < 2; j++) {
+		at(n1).gateOf[j].insert(at(n1).gateOf[j].end(), at(n0).gateOf[j].begin(), at(n0).gateOf[j].end());
+		sort(at(n1).gateOf[j].begin(), at(n1).gateOf[j].end());
+		at(n1).gateOf[j].erase(unique(at(n1).gateOf[j].begin(), at(n1).gateOf[j].end()), at(n1).gateOf[j].end());
+		at(n1).drainOf[j].insert(at(n1).drainOf[j].end(), at(n0).drainOf[j].begin(), at(n0).drainOf[j].end());
+		sort(at(n1).drainOf[j].begin(), at(n1).drainOf[j].end());
+		at(n1).drainOf[j].erase(unique(at(n1).drainOf[j].begin(), at(n1).drainOf[j].end()), at(n1).drainOf[j].end());
+		at(n1).sourceOf[j].insert(at(n1).sourceOf[j].end(), at(n0).sourceOf[j].begin(), at(n0).sourceOf[j].end());
+		sort(at(n1).sourceOf[j].begin(), at(n1).sourceOf[j].end());
+		at(n1).sourceOf[j].erase(unique(at(n1).sourceOf[j].begin(), at(n1).sourceOf[j].end()), at(n1).sourceOf[j].end());
 	}
 
 	if (n0 >= 0) {
@@ -261,11 +267,29 @@ int production_rule_set::connect(int n0, int n1) {
 				}
 			}
 		}
+		for (auto n = nodes.begin(); n != nodes.end(); n++) {
+			for (int i = (int)n->remote.size()-1; i >= 0; i--) {
+				if (n->remote[i] == n0) {
+					n->remote.erase(n->remote.begin()+i);
+				} else if (n->remote[i] > n0) {
+					n->remote[i]--;
+				}
+			}
+		}
 		if (n0 < n1) {
 			n1--;
 		}
 	} else {
 		nodes.erase(nodes.begin()+flip(n0));
+		for (auto n = nets.begin(); n != nets.end(); n++) {
+			for (int i = (int)n->remote.size()-1; i >= 0; i--) {
+				if (n->remote[i] == n0) {
+					n->remote.erase(n->remote.begin()+i);
+				} else if (n->remote[i] < n0) {
+					n->remote[i]++;
+				}
+			}
+		}
 		for (auto n = nodes.begin(); n != nodes.end(); n++) {
 			for (int i = (int)n->remote.size()-1; i >= 0; i--) {
 				if (n->remote[i] == n0) {
@@ -313,6 +337,7 @@ int production_rule_set::add_source(int gate, int drain, int threshold, int driv
 
 	int source = flip(nodes.size());
 	nodes.push_back(net());
+	nodes.back().remote.push_back(source);
 	nodes.back().sourceOf[driver].push_back(devs.size());
 	for (auto i = at(gate).remote.begin(); i != at(gate).remote.end(); i++) {
 		at(*i).gateOf[threshold].push_back(devs.size());
@@ -339,6 +364,7 @@ int production_rule_set::add_drain(int source, int gate, int threshold, int driv
 
 	int drain = flip(nodes.size());
 	nodes.push_back(net());
+	nodes.back().remote.push_back(drain);
 	nodes.back().sourceOf[driver].push_back(devs.size());
 	for (auto i = at(gate).remote.begin(); i != at(gate).remote.end(); i++) {
 		at(*i).gateOf[threshold].push_back(devs.size());

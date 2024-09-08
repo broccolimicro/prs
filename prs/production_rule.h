@@ -45,7 +45,7 @@ struct device {
 };
 
 struct net {
-	net();
+	net(bool keep=false);
 	~net();
 
 	// These arrays should include remote devices!
@@ -84,7 +84,7 @@ struct production_rule_set
 	static int flip(int index);
 	net &at(int index);
 	const net &at(int index) const;
-	net &create(int index);
+	net &create(int index, bool keep=false);
 
 	void connect_remote(int n0, int n1);
 	int connect(int n0, int n1);
