@@ -166,7 +166,6 @@ struct calendar_queue {
 						}
 
 						if (e0 == nullptr) {
-							// this is broken
 							e1->next = n;
 							calendar[i].first = (s1 == nullptr ? calendar[i+1].first : s1->next);
 						} else {
@@ -217,14 +216,14 @@ struct calendar_queue {
 			uint64_t t = priority(e->value);
 			uint64_t y = yearof(t);
 			uint64_t d = dayof(t);
-			while (e != nullptr and (y > y0 or d != i*2)) {
-				while (e != nullptr and d == i*2) {
+			while (e != nullptr and (y > y0 or (int)d != i*2)) {
+				while (e != nullptr and (int)d == i*2) {
 					e = e->prev;
 					if (e != nullptr) {
 						t = priority(e->value);
 						y = yearof(t);
 						d = dayof(t);
-						if (y == y0 and d == i*2) {
+						if (y == y0 and (int)d == i*2) {
 							e = nullptr;
 						}
 					}
@@ -285,24 +284,30 @@ struct calendar_queue {
 		}
 	}
 
-	event *next(uint64_t time) {
+	event *next(uint64_t time=std::numeric_limits<uint64_t>::max()) {
 		if (empty()) {
 			return nullptr;
 		}
+		if (time == std::numeric_limits<uint64_t>::max()) {
+			time = now;
+		}
 
 		auto start = calendar.begin()+dayof(time);
-		int y = yearof(time);
+		uint64_t y = yearof(time);
 		event *m = nullptr;
-		uint64_t mt;
+		uint64_t mt = std::numeric_limits<uint64_t>::max();
 		for (auto di = start; di != calendar.end(); di++) {
 			for (event *e = di->first; e != nullptr; e = e->next) {
 				uint64_t et = priority(e->value);
 				if (et >= time) {
 					if (yearof(et) == y) {
+						if (time == now) {
+							now = et;
+						}
 						return e;
 					}
 
-					if (m == nullptr or et < mt) {
+					if (et < mt) {
 						m = e;
 						mt = et;
 					}
@@ -317,10 +322,13 @@ struct calendar_queue {
 				uint64_t et = priority(e->value);
 				if (et >= time) {
 					if (yearof(et) == y) {
+						if (time == now) {
+							now = et;
+						}
 						return e;
 					}
 
-					if (m == nullptr or et < mt) {
+					if (et < mt) {
 						m = e;
 						mt = et;
 					}
@@ -329,6 +337,9 @@ struct calendar_queue {
 			}
 		}
 		
+		if (time == now) {
+			now = mt;
+		}
 		return m;
 	}
 
@@ -436,14 +447,7 @@ struct calendar_queue {
 	}
 
 	T pop(uint64_t time=std::numeric_limits<uint64_t>::max()) {
-		if (time == std::numeric_limits<uint64_t>::max()) {
-			time = now;
-		}
-		event *e = next(time);
-		if (time == now and e != nullptr) {
-			now = priority(e->value);
-		}
-		return pop(e);
+		return pop(next(time));
 	}
 
 	uint64_t size() {
@@ -452,6 +456,16 @@ struct calendar_queue {
 
 	bool empty() {
 		return count == 0;
+	}
+
+	void clear() {
+		events.clear();
+		unused = nullptr;
+		calendar.clear();
+		day = year-mindiff;
+		calendar.resize(days());
+		now = 0;
+		count = 0;
 	}
 };
 

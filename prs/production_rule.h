@@ -18,7 +18,7 @@ struct attributes {
 	~attributes();
 
 	bool weak;
-	bool keeper;
+	bool iskeeper;
 
 	// multiples of the minimum width of diffusion for that type of transistor.
 	float width;
@@ -48,11 +48,21 @@ struct net {
 	net();
 	~net();
 
-	vector<int> gateOf;
+	// These arrays should include remote devices!
+	// Check if the device is remote by comparing the net id against the relevant
+	// gate, source, or drain id. If they are different, then the device is
+	// remote and the transition should be delayed.
+
+	// indexed by device::threshold
+	array<vector<int>, 2> gateOf;
+
+	// indexed by device::driver
 	array<vector<int>, 2> sourceOf;
 	array<vector<int>, 2> drainOf;
 
 	vector<int> remote;
+
+	bool keep;
 
 	void add_remote(int uid);
 };
@@ -70,11 +80,13 @@ struct production_rule_set
 
 	void init(const ucs::variable_set &v);
 
+	int uid(int index) const;
 	static int flip(int index);
 	net &at(int index);
 	const net &at(int index) const;
 	net &create(int index);
 
+	void connect_remote(int n0, int n1);
 	int connect(int n0, int n1);
 	void replace(vector<int> &lst, int from, int to);
 	int add_source(int gate, int drain, int threshold, int driver, attributes attr=attributes());
