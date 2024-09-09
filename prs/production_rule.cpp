@@ -8,16 +8,16 @@ namespace prs
 
 attributes::attributes() {
 	weak = false;
-	iskeeper = false;
+	pass = false;
 	width = 0.0;
 	length = 0.0;
 	variant = "";
 	delay_max = 10000; // 10ns
 }
 
-attributes::attributes(bool weak, bool keeper, float width, float length, string variant, uint64_t delay_max) {
+attributes::attributes(bool weak, bool pass, float width, float length, string variant, uint64_t delay_max) {
 	this->weak = weak;
-	this->iskeeper = keeper;
+	this->pass = pass;
 	this->width = width;
 	this->length = length;
 	this->variant = variant;
@@ -159,6 +159,11 @@ void production_rule_set::connect_remote(int n0, int n1) {
 		sort(i1->sourceOf[i].begin(), i1->sourceOf[i].end());
 		i1->sourceOf[i].erase(unique(i1->sourceOf[i].begin(), i1->sourceOf[i].end()), i1->sourceOf[i].end());
 		i0->sourceOf[i] = i1->sourceOf[i];
+
+		i1->rsourceOf[i].insert(i1->rsourceOf[i].end(), i0->rsourceOf[i].begin(), i0->rsourceOf[i].end());
+		sort(i1->rsourceOf[i].begin(), i1->rsourceOf[i].end());
+		i1->rsourceOf[i].erase(unique(i1->rsourceOf[i].begin(), i1->rsourceOf[i].end()), i1->rsourceOf[i].end());
+		i0->rsourceOf[i] = i1->rsourceOf[i];
 	}
 }
 
@@ -217,6 +222,9 @@ int production_rule_set::connect(int n0, int n1) {
 			at(*i).sourceOf[j].insert(at(*i).sourceOf[j].end(), at(n1).sourceOf[j].begin(), at(n1).sourceOf[j].end());
 			sort(at(*i).sourceOf[j].begin(), at(*i).sourceOf[j].end());
 			at(*i).sourceOf[j].erase(unique(at(*i).sourceOf[j].begin(), at(*i).sourceOf[j].end()), at(*i).sourceOf[j].end());
+			at(*i).rsourceOf[j].insert(at(*i).rsourceOf[j].end(), at(n1).rsourceOf[j].begin(), at(n1).rsourceOf[j].end());
+			sort(at(*i).rsourceOf[j].begin(), at(*i).rsourceOf[j].end());
+			at(*i).rsourceOf[j].erase(unique(at(*i).rsourceOf[j].begin(), at(*i).rsourceOf[j].end()), at(*i).rsourceOf[j].end());
 		}
 	}
 
@@ -238,6 +246,9 @@ int production_rule_set::connect(int n0, int n1) {
 			at(*i).sourceOf[j].insert(at(*i).sourceOf[j].end(), at(n0).sourceOf[j].begin(), at(n0).sourceOf[j].end());
 			sort(at(*i).sourceOf[j].begin(), at(*i).sourceOf[j].end());
 			at(*i).sourceOf[j].erase(unique(at(*i).sourceOf[j].begin(), at(*i).sourceOf[j].end()), at(*i).sourceOf[j].end());
+			at(*i).rsourceOf[j].insert(at(*i).rsourceOf[j].end(), at(n0).rsourceOf[j].begin(), at(n0).rsourceOf[j].end());
+			sort(at(*i).rsourceOf[j].begin(), at(*i).rsourceOf[j].end());
+			at(*i).rsourceOf[j].erase(unique(at(*i).rsourceOf[j].begin(), at(*i).rsourceOf[j].end()), at(*i).rsourceOf[j].end());
 		}
 	}
 
@@ -254,6 +265,9 @@ int production_rule_set::connect(int n0, int n1) {
 		at(n1).sourceOf[j].insert(at(n1).sourceOf[j].end(), at(n0).sourceOf[j].begin(), at(n0).sourceOf[j].end());
 		sort(at(n1).sourceOf[j].begin(), at(n1).sourceOf[j].end());
 		at(n1).sourceOf[j].erase(unique(at(n1).sourceOf[j].begin(), at(n1).sourceOf[j].end()), at(n1).sourceOf[j].end());
+		at(n1).rsourceOf[j].insert(at(n1).rsourceOf[j].end(), at(n0).rsourceOf[j].begin(), at(n0).rsourceOf[j].end());
+		sort(at(n1).rsourceOf[j].begin(), at(n1).rsourceOf[j].end());
+		at(n1).rsourceOf[j].erase(unique(at(n1).rsourceOf[j].begin(), at(n1).rsourceOf[j].end()), at(n1).rsourceOf[j].end());
 	}
 
 	if (n0 >= 0) {
@@ -339,12 +353,16 @@ int production_rule_set::add_source(int gate, int drain, int threshold, int driv
 	nodes.push_back(net());
 	nodes.back().remote.push_back(source);
 	nodes.back().sourceOf[driver].push_back(devs.size());
+
 	for (auto i = at(gate).remote.begin(); i != at(gate).remote.end(); i++) {
 		at(*i).gateOf[threshold].push_back(devs.size());
 	}
 	
 	for (auto i = at(drain).remote.begin(); i != at(drain).remote.end(); i++) {
 		at(*i).drainOf[driver].push_back(devs.size());
+		if (attr.pass) {
+			at(*i).rsourceOf[driver].push_back(devs.size());
+		}
 	}
 	devs.push_back(device(source, gate, drain, threshold, driver, attr));
 	return source;
@@ -371,6 +389,9 @@ int production_rule_set::add_drain(int source, int gate, int threshold, int driv
 	}
 	for (auto i = at(drain).remote.begin(); i != at(drain).remote.end(); i++) {
 		at(*i).drainOf[driver].push_back(devs.size());
+		if (attr.pass) {
+			at(*i).rsourceOf[driver].push_back(devs.size());
+		}
 	}
 	devs.push_back(device(source, gate, drain, threshold, driver, attr));
 	return drain;

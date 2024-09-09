@@ -9,12 +9,18 @@ namespace prs {
 
 struct enabled_transition {
 	enabled_transition();
-	enabled_transition(int dev, int value, uint64_t fire_at);
+	enabled_transition(uint64_t fire_at, boolean::cube guard, int net, int value, int strength, bool stable);
 	~enabled_transition();
 
-	int dev;
-	int value;
 	uint64_t fire_at;
+	
+	boolean::cube guard;
+	int net;
+	int value;
+	int strength;
+	bool stable;
+
+	string to_string(const ucs::variable_set &v);
 };
 
 struct enabled_priority {
@@ -53,16 +59,19 @@ struct simulator {
 	queue enabled;
 
 	// indexed by device, points to events in the enabled queue.
-	vector<queue::event*> devs;
+	vector<queue::event*> nets;
+	vector<queue::event*> nodes;
 
-	void schedule(int dev, int value);
+	queue::event* &at(int net);
+
+	void schedule(uint64_t delay_max, boolean::cube guard, int net, int value, int strength, bool stable=true);
 	void propagate(deque<int> &q, int net, bool vacuous=false);
+	void model(int i, bool reverse, boolean::cube &guard, int &value, int &drive_strength, int &glitch_value, int &glitch_strength, uint64_t &delay_max);
 	void evaluate(deque<int> net);
-	void fire(int dev=-1);
+	enabled_transition fire(int net=std::numeric_limits<int>::max());
 
-	void cover(int net, int val);
-	void set(int net, int val);
-	void set(boolean::cube action);
+	void set(int net, int value, int strength=3, bool stable=true, deque<int> *q=nullptr);
+	void set(boolean::cube action, int strength=3, bool stable=true, deque<int> *q=nullptr);
 
 	void reset();
 	void wait();

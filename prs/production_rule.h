@@ -14,11 +14,11 @@ namespace prs
 
 struct attributes {
 	attributes();
-	attributes(bool weak, bool keeper=false, float width=0.0, float length=0.0, string variant="", uint64_t delay_max=10000);
+	attributes(bool weak, bool pass=false, float width=0.0, float length=0.0, string variant="", uint64_t delay_max=10000);
 	~attributes();
 
 	bool weak;
-	bool iskeeper;
+	bool pass;
 
 	// multiples of the minimum width of diffusion for that type of transistor.
 	float width;
@@ -58,6 +58,7 @@ struct net {
 
 	// indexed by device::driver
 	array<vector<int>, 2> sourceOf;
+	array<vector<int>, 2> rsourceOf;
 	array<vector<int>, 2> drainOf;
 
 	vector<int> remote;

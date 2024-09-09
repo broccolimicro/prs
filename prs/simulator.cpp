@@ -6,18 +6,44 @@
 namespace prs {
 
 enabled_transition::enabled_transition() {
-	this->dev = -1;
-	this->value = 2;
 	this->fire_at = 0;
+	this->net = 0;
+	this->value = 2;
+	this->strength = 0;
+	this->stable = true;
 }
 
-enabled_transition::enabled_transition(int dev, int value, uint64_t fire_at) {
-	this->dev = dev;
-	this->value = value;
+enabled_transition::enabled_transition(uint64_t fire_at, boolean::cube guard, int net, int value, int strength, bool stable) {
 	this->fire_at = fire_at;
+	
+	this->guard = guard;
+	this->net = net;
+	this->value = value;
+	this->strength = strength;
+	this->stable = stable;
 }
 
 enabled_transition::~enabled_transition() {
+}
+
+string enabled_transition::to_string(const ucs::variable_set &v) {
+	string result = export_expression(guard, v).to_string() + "->" + export_variable_name(net, v).to_string();
+	switch (value) {
+	case -1: result += "~"; break;
+	case 0: result += "-"; break;
+	case 1: result += "+"; break;
+	}
+	
+	switch (strength) {
+	case 0: result += " floating"; break;
+	case 1: result += " weak"; break;
+	case 3: result += " power"; break;
+	}
+
+	if (not stable) {
+		result += " unstable";
+	}
+	return result;
 }
 
 bool operator<(enabled_transition t0, enabled_transition t1) {
@@ -64,18 +90,44 @@ simulator::~simulator()
 
 }
 
-void simulator::schedule(int dev, int value) {
-	if (dev >= (int)devs.size()) {
-		devs.resize(dev+1, nullptr);
+simulator::queue::event* &simulator::at(int net) {
+	if (net >= 0) {
+		return nets[net];
 	}
-	auto di = base->devs.begin()+dev;
-	uint64_t fire_at = enabled.now + pareto(di->attr.delay_max, 5.0);
-	if (devs[dev] == nullptr) {
-		devs[dev] = enabled.push(enabled_transition(dev, value, fire_at));
+	return nodes[base->flip(net)];
+}
+
+void simulator::schedule(uint64_t delay_max, boolean::cube guard, int net, int value, int strength, bool stable) {
+	if (net >= (int)nets.size()) {
+		nets.resize(net+1, nullptr);
+	} else if (base->flip(net) >= (int)nodes.size()) {
+		nodes.resize(base->flip(net)+1, nullptr);
+	}
+	
+	int prev_value = encoding.get(base->uid(net));
+
+	uint64_t fire_at = enabled.now + pareto(delay_max, 5.0);
+	if (at(net) == nullptr) {
+		at(net) = enabled.push(enabled_transition(fire_at, guard, net, value, strength, stable));
+	} else if (at(net)->value.strength == 0 or at(net)->value.value == prev_value) {
+		// it was a vacuous transition, it doesn't go unstable
+		at(net)->value.guard = guard;
+		at(net)->value.value = value;
+		at(net)->value.strength = strength;
+		at(net)->value.stable = stable;
 	} else {
-		// TODO(edward.bingham) flag instability
+		// TODO(edward.bingham) handle all of the possible interactions here
 		//enabled.set(devs[dev], enabled_transition(dev, ((devs[dev]->value+1)&(value+1))-1, fire_at));
-		devs[dev]->value.value = ((devs[dev]->value.value+1)&(value+1))-1;
+		at(net)->value.guard &= guard;
+
+		if (value != at(net)->value.value) {
+			at(net)->value.value = -1;
+			at(net)->value.stable = false;
+		}
+
+		if (at(net)->value.strength < strength) {
+			at(net)->value.strength = strength;
+		}
 	}
 }
 
@@ -83,30 +135,108 @@ void simulator::propagate(deque<int> &q, int net, bool vacuous) {
 	for (int driver = 0; driver < 2; driver++) {
 		for (auto i = base->at(net).sourceOf[driver].begin(); i != base->at(net).sourceOf[driver].end(); i++) {
 			auto dev = base->devs.begin()+*i;
-			bool isremote = net != dev->source;
-			int gate_uid = base->uid(dev->gate);
-			int local_value = encoding.get(gate_uid);
+			int local_value = encoding.get(base->uid(dev->gate));
 			if (local_value == 2 or local_value == dev->threshold) {
-				if (isremote) {
-					schedule(*i, local_value);
-				} else {
-					q.push_back(dev->drain);
-				}
+				q.push_back(dev->drain);
 			}
 		}
 	}
 
-	// TODO(edward.bingham) loop through all remote nets as well
+	/*for (int driver = 0; driver < 2; driver++) {
+		for (auto i = base->at(net).rsourceOf[driver].begin(); i != base->at(net).rsourceOf[driver].end(); i++) {
+			auto dev = base->devs.begin()+*i;
+			int local_value = encoding.get(base->uid(dev->gate));
+			if (local_value == 2 or local_value == dev->threshold) {
+				q.push_back(dev->drain);
+			}
+		}
+	}*/
+
 	for (int threshold = 0; threshold < 2 and not vacuous; threshold++) {
 		for (auto i = base->at(net).gateOf[threshold].begin(); i != base->at(net).gateOf[threshold].end(); i++) {
-			auto dev = base->devs.begin()+*i;
-			int gate_uid = base->uid(dev->gate);
-			int local_value = encoding.get(gate_uid);
-			schedule(*i, local_value);
+			q.push_back(base->devs[*i].drain);
 		}
 	}
+	sort(q.begin(), q.end());
+	q.erase(unique(q.begin(), q.end()), q.end());
 }
 
+void simulator::model(int i, bool reverse, boolean::cube &guard, int &value, int &drive_strength, int &glitch_value, int &glitch_strength, uint64_t &delay_max) {
+	auto dev = base->devs.begin()+i;
+
+	int source = reverse ? dev->drain : dev->source;
+	int drain = reverse ? dev->source : dev->drain;
+
+	int prev_value = encoding.get(base->uid(drain))+1;
+
+	//bool isremote = net != drain;
+	int gate_uid = base->uid(dev->gate);
+	int source_uid = base->uid(source);
+
+	int local_value = encoding.get(gate_uid);
+	int global_value = global.get(gate_uid);
+
+	int source_value = encoding.get(source_uid)+1;
+	int source_strength = 2-strength.get(source_uid);
+	if (dev->attr.weak and source_strength > 1) {
+		source_strength = 1;
+	} else if (source_strength > 2) {
+		source_strength = 2;
+	}
+
+	bool debug = false;
+
+	if (debug) cout << "\t@" << export_variable_name(source, *variables).to_string() << ":" << source_value-1 << "*" << source_strength << "&" << (dev->threshold==0 ? "~" : "") << export_variable_name(dev->gate, *variables).to_string() << ":" << local_value << "->" << export_variable_name(drain, *variables).to_string() << (dev->driver==0 ? "-" : "+") << "*" << drive_strength;
+
+	if (local_value == dev->threshold or (local_value == 2 and global_value == dev->threshold)) {
+		if (source_value == 3 or drive_strength > source_strength) {
+			// undriven
+			// TODO(edward.bingham) consider for backprop
+			if (debug) cout << "\tundriven" << endl;
+			return;
+		} else if (drive_strength < source_strength) {
+			// device is driving net stronger than other devices
+			value = source_value;
+			drive_strength = source_strength;
+			if (dev->attr.delay_max < delay_max) {
+				delay_max = dev->attr.delay_max;
+			}
+			if (debug) cout << "\tstronger" << endl;
+		} else /*if (drive_strength == source_strength)*/ {
+			value &= source_value;
+			if (dev->attr.delay_max < delay_max) {
+				delay_max = dev->attr.delay_max;
+			}
+			if (debug) cout << "\tdriven" << endl;
+		}
+		if (global_value != 2 and global_value != -1) {
+			guard.set(gate_uid, global_value);
+		}
+	} /*else if (local_value == 1-dev->threshold) {
+		// this device is disabled, value remains unaffected
+		// TODO(edward.bingham) check instability?
+	}*/ else if ((source_value&prev_value) != prev_value and (local_value == -1 or (local_value == 2 and global_value != dev->threshold))) {
+		// instability
+		if (source_strength > glitch_strength) {
+			glitch_value = source_value;
+			glitch_strength = source_strength;
+			if (dev->attr.delay_max < delay_max) {
+				delay_max = dev->attr.delay_max;
+			}
+			if (debug) cout << "\tstronger glitch" << endl;
+		} else if (source_strength == glitch_strength) {
+			glitch_value &= source_value;
+			if (dev->attr.delay_max < delay_max) {
+				delay_max = dev->attr.delay_max;
+			}
+			if (debug) cout << "\tglitch" << endl;
+		} else {
+			if (debug) cout << "\tweaker" << endl;
+		}
+	} else {
+		if (debug) cout << "\tdisabled" << endl;
+	}
+}
 
 void simulator::evaluate(deque<int> nets) {
 	deque<int> q = nets;
@@ -125,167 +255,130 @@ void simulator::evaluate(deque<int> nets) {
 			value = encoding.get(uid)+1;
 		}
 		boolean::cube guard_action;
-		//cout << "evaluating " << net << "/(" << base->flip(base->nodes.size()) << "," << base->nets.size() << ") " << export_variable_name(net, *variables).to_string() << (base->at(net).keep ? " keep" : "") << endl;
+		uint64_t delay_max = std::numeric_limits<uint64_t>::max();
+
+		bool debug = false;
+
+		if (debug) cout << "evaluating " << net << "/(" << base->flip(base->nodes.size()) << "," << base->nets.size() << ") " << export_variable_name(net, *variables).to_string() << ":" << encoding.get(uid) << (base->at(net).keep ? " keep" : "") << endl;
 		for (int driver = 0; driver < 2; driver++) {
 			for (auto i = base->at(net).drainOf[driver].begin(); i != base->at(net).drainOf[driver].end(); i++) {
-				auto dev = base->devs.begin()+*i;
-
-				bool isremote = net != dev->drain;
-				int gate_uid = base->uid(dev->gate);
-				int source_uid = base->uid(dev->source);
-
-				int local_value = encoding.get(gate_uid);
-				int global_value = global.get(gate_uid);
-
-				int source_value = encoding.get(source_uid)+1;
-				int source_strength = 2-strength.get(source_uid);
-				if (dev->attr.weak and source_strength > 1) {
-					source_strength = 1;
-				} else if (source_strength > 2) {
-					source_strength = 2;
-				}
-
-				//cout << "\t@" << export_variable_name(dev->source, *variables).to_string() << ":" << source_value-1 << "*" << source_strength << "&" << (dev->threshold==0 ? "~" : "") << export_variable_name(dev->gate, *variables).to_string() << ":" << local_value << "->" << export_variable_name(dev->drain, *variables).to_string() << (dev->driver==0 ? "-" : "+") << "*" << drive_strength;
-
-
-				if (local_value == dev->threshold or (local_value == 2 and global_value == dev->threshold)) {
-					if (source_value == 3 or drive_strength > source_strength) {
-						// undriven
-						// TODO(edward.bingham) consider for backprop
-						//cout << "\tundriven" << endl;
-						continue;
-					} else if (drive_strength < source_strength) {
-						// device is driving net stronger than other devices
-						value = source_value;
-						drive_strength = source_strength;
-						//cout << "\tstronger" << endl;
-					} else /*if (drive_strength == source_strength)*/ {
-						value &= source_value;
-						//cout << "\tdriven" << endl;
-					}
-					guard_action.set(gate_uid, global_value);
-				} /*else if (local_value == 1-dev->threshold) {
-					// this device is disabled, value remains unaffected
-					// TODO(edward.bingham) check instability?
-				}*/ else if ((local_value == 2 and global_value == 1-dev->threshold) or local_value == -1 or global_value == -1) {
-					// instability
-					if (source_strength > glitch_strength) {
-						glitch_value = source_value;
-						glitch_strength = source_strength;
-						//cout << "\tstronger glitch" << endl;
-					} else if (source_strength == glitch_strength) {
-						glitch_value &= source_value;
-						//cout << "\tglitch" << endl;
-					} else {
-						//cout << "\tweaker" << endl;
-					}
-					guard_action.set(gate_uid, global_value);
-				} else {
-					//cout << "\tdisabled" << endl;
-				}
+				model(*i, false, guard_action, value, drive_strength, glitch_value, glitch_strength, delay_max);
 			}
+
+			/*for (auto i = base->at(net).rsourceOf[driver].begin(); i != base->at(net).rsourceOf[driver].end(); i++) {
+				model(*i, true, guard_action, value, drive_strength, glitch_value, glitch_strength, delay_max);
+			}*/
+		}
+		if (delay_max == std::numeric_limits<uint64_t>::max()) {
+			delay_max = 0;
 		}
 
-		int prev_value = encoding.get(uid);
-		int prev_strength = 2-strength.get(uid);
-
-		//cout << "\tfinal value = ";
+		if (debug) cout << "\tfinal value = ";
 		bool stable = true;
-		if (glitch_strength >= drive_strength and ((glitch_value != 3 and glitch_value != value and glitch_value != prev_value+1 and prev_value != -1) or glitch_value == 0)) {
-			error("", "unstable rule " + export_variable_name(net, *variables).to_string() + "~", __FILE__, __LINE__);
+		if (glitch_strength >= drive_strength and (glitch_value&value) != value) {
 			// This net is unstable
 			value &= glitch_value;
 			drive_strength = glitch_strength;
 			stable = false;
 			// TODO(edward.bingham) flag an error
-			//cout << "unstable ";
+			if (debug) cout << "unstable ";
 			// TODO(edward.bingham) schedule another event to resolve the glitch?
-			
 		}
 		value -= 1;
-		//cout << value << " strength = " << drive_strength << endl;
+		if (debug) cout << value << " strength = " << drive_strength << endl;
 
-		if (value >= 0) {
-			guard &= guard_action;
-		}
-
-		//cout << "\tprev value = " << prev_value << " strength = " << prev_strength << endl;
-		bool vacuous = false;
-		if (value == prev_value) {
-			if (drive_strength == prev_strength) {
-				// vacuous transition
-				continue;
+		if (delay_max == 0 or (base->at(net).gateOf[0].empty() and base->at(net).gateOf[1].empty())) {
+			if (value >= 0) {
+				guard &= guard_action;
 			}
-			vacuous = true;
-		}
 
-		encoding.set(uid, value);
-		global.set(uid, value);
-		strength.set(uid, 2-drive_strength);
-		for (auto rem = base->at(net).remote.begin(); rem != base->at(net).remote.end(); rem++) {
-			if (*rem == net) {
-				continue;
-			}
-			global.set(*rem, value);
-			encoding.remote_set(*rem, value, stable);
-			strength.set(*rem, 2-drive_strength);
-		}
-
-		for (auto rem = base->at(net).remote.begin(); rem != base->at(net).remote.end(); rem++) {
-			propagate(q, *rem, vacuous);
+			set(net, value, drive_strength, stable, &q);
+		} else {
+			schedule(delay_max, guard_action, net, value, drive_strength, stable);
 		}
 	}
 
 	encoding &= guard;
 }
 
-void simulator::fire(int dev) {
+enabled_transition simulator::fire(int net) {
 	enabled_transition t;
-	if (dev < 0) {
+	if (net >= (int)nets.size()) {
 		t = enabled.pop();
-	} else if (devs[dev] != nullptr) {
-		t = enabled.pop(devs[dev]);
-		devs[dev] = nullptr;
+	} else if (at(net) != nullptr) {
+		t = enabled.pop(at(net));
+		at(net) = nullptr;
 	} else {
-		return;
+		return t;
 	}
 
-	devs[t.dev] = nullptr;
-	evaluate(deque<int>(1, base->devs[t.dev].drain));
+	at(t.net) = nullptr;
+	if (t.value >= 0) {
+		encoding &= t.guard;
+	}
+
+	deque<int> q;
+	set(t.net, t.value, t.strength, t.stable);
+	return t;
 }
 
-void simulator::cover(int net, int val) {
-	for (auto i = base->at(net).drainOf[val].begin(); i != base->at(net).drainOf[val].end(); i++) {
-		if (*i < (int)devs.size() and devs[*i] != nullptr) {
-			enabled.pop(devs[*i]);
-			devs[*i] = nullptr;
+void simulator::set(int net, int value, int strength, bool stable, deque<int> *q) {
+	if (not stable) {
+		error("", "unstable rule " + export_variable_name(net, *variables).to_string() + (value == 1 ? "+" : (value == 0 ? "-" : "~")), __FILE__, __LINE__);
+	} else if (value == -1) {
+		error("", "interference " + export_variable_name(net, *variables).to_string(), __FILE__, __LINE__);
+	}
+	/*if (value == 2) {
+		error("", "floating node " + export_variable_name(net, *variables).to_string(), __FILE__, __LINE__);
+	}*/
+
+	if (net > base->flip((int)nodes.size()) and net < (int)nets.size() and at(net) != nullptr) {
+		enabled.pop(at(net));
+		at(net) = nullptr;
+	}
+
+	int uid = base->uid(net);
+	int prev_value = encoding.get(uid);
+	int prev_strength = 2-this->strength.get(uid);
+
+	//cout << "\tprev value = " << prev_value << " strength = " << prev_strength << endl;
+	bool vacuous = false;
+	if (value == prev_value) {
+		if (strength == prev_strength) {
+			// vacuous transition
+			return;
 		}
+		vacuous = true;
 	}
-}
 
-void simulator::set(int net, int val) {
-	cover(net, val);
-
-	global.set(net, val);
-	encoding.set(net, val);
-	strength.set(net, -1);
+	encoding.set(uid, value);
+	global.set(uid, value);
+	this->strength.set(uid, 2-strength);
 	for (auto i = base->at(net).remote.begin(); i != base->at(net).remote.end(); i++) {
 		if (*i == net) {
 			continue;
 		}
-		global.set(*i, val);
-		encoding.remote_set(*i, val);
-		strength.set(*i, -1);
+		encoding.remote_set(*i, value, stable);
+		global.set(*i, value);
+		this->strength.set(*i, 2-strength);
 	}
 
-	deque<int> q;
-	propagate(q, net, false);
-	if (not q.empty()) {
-		evaluate(q);
+	deque<int> tmp;
+	bool doEval = false;
+	if (q == nullptr) {
+		q = &tmp;
+		doEval = true;
+	}
+
+	for (auto i = base->at(net).remote.begin(); i != base->at(net).remote.end(); i++) {
+		propagate(*q, *i, vacuous);
+	}
+	if (doEval and not q->empty()) {
+		evaluate(*q);
 	}
 }
 
-void simulator::set(boolean::cube action) {
+void simulator::set(boolean::cube action, int strength, bool stable, deque<int> *q) {
 	boolean::cube remote_action = action.remote(variables->get_groups());
 	for (int uid = 0; uid < action.size()*16; uid++) {
 		int net = uid;
@@ -293,33 +386,41 @@ void simulator::set(boolean::cube action) {
 			net = base->flip(net-base->nets.size());
 		}
 		int val = action.get(uid);
-		if (val != 2) {
-			cover(net, val);
+		if (val != 2 and net < (int)nets.size() and at(net) != nullptr) {
+			enabled.pop(at(net));
+			at(net) = nullptr;
 		}
 	}
 
 	global = local_assign(global, remote_action, true);
 	encoding = remote_assign(local_assign(encoding, action, true), global, true);
-	strength &= remote_action.mask().flip();
+	this->strength &= remote_action.mask().flip();
 
-	deque<int> q;
-	for (int uid = 0; uid < action.size()*16; uid++) {
+	deque<int> tmp;
+	bool doEval = false;
+	if (q == nullptr) {
+		q = &tmp;
+		doEval = true;
+	}
+
+	for (int uid = 0; uid < remote_action.size()*16; uid++) {
 		int net = uid;
 		if (net >= (int)base->nets.size()) {
 			net = base->flip(net-base->nets.size());
 		}
 
-		propagate(q, net, false);
+		propagate(*q, net, false);
 	}
-	if (not q.empty()) {
-		evaluate(q);
+	if (doEval and not q->empty()) {
+		evaluate(*q);
 	}
 }
 
 void simulator::reset()
 {
 	enabled.clear();
-	devs.clear();
+	nets.clear();
+	nodes.clear();
 	global.values.clear();
 	encoding.values.clear();
 	strength.values.clear();
