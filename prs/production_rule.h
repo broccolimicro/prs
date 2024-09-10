@@ -107,6 +107,7 @@ struct production_rule_set
 
 	void invert(int net);
 	bool cmos_implementable();
+	void print(const ucs::variable_set &v);
 };
 
 }

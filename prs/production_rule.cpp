@@ -1,6 +1,7 @@
 #include "production_rule.h"
 #include <limits>
 #include <common/message.h>
+#include <interpret_boolean/export.h>
 
 using namespace std;
 
@@ -536,6 +537,23 @@ bool production_rule_set::cmos_implementable() {
 		}
 	}
 	return true;
+}
+
+void production_rule_set::print(const ucs::variable_set &v) {
+	cout << "nets " << nets.size() << endl;
+	for (int i = 0; i < (int)nets.size(); i++) {
+		cout << "net " << i << ": " << export_variable_name(i, v).to_string() << " gateOf=" << to_string(nets[i].gateOf[0]) << to_string(nets[i].gateOf[1]) << " sourceOf=" << to_string(nets[i].sourceOf[0]) << to_string(nets[i].sourceOf[1]) << " drainOf=" << to_string(nets[i].drainOf[0]) << to_string(nets[i].drainOf[1]) << " remote=" << to_string(nets[i].remote) << (nets[i].keep ? " keep" : "") << endl;
+	}
+
+	cout << "nodes " << nodes.size() << endl;
+	for (int i = 0; i < (int)nodes.size(); i++) {
+		cout << "node " << i << ": " << export_variable_name(flip(i), v).to_string() << " gateOf=" << to_string(nodes[i].gateOf[0]) << to_string(nodes[i].gateOf[1]) << " sourceOf=" << to_string(nodes[i].sourceOf[0]) << to_string(nodes[i].sourceOf[1]) << " drainOf=" << to_string(nodes[i].drainOf[0]) << to_string(nodes[i].drainOf[1]) << " remote=" << to_string(nodes[i].remote) << (nodes[i].keep ? " keep" : "") << endl;
+	}
+
+	cout << "devs " << devs.size() << endl;
+	for (int i = 0; i < (int)devs.size(); i++) {
+		cout << "dev " << i << ": source=" << export_variable_name(devs[i].source, v).to_string() << "(" << devs[i].source << ") gate=" << export_variable_name(devs[i].gate, v).to_string() << "(" << devs[i].gate << ") drain=" << export_variable_name(devs[i].drain, v).to_string() << "(" << devs[i].drain << ") threshold=" << devs[i].threshold << (devs[i].attr.weak ? " weak" : "") << (devs[i].attr.pass ? " pass" : "") << endl;
+	}
 }
 
 }
