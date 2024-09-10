@@ -227,16 +227,18 @@ void bubble::save_prs(production_rule_set *prs, ucs::variable_set &variables)
 		error("", "negative cycle found " + tempstr, __FILE__, __LINE__);
 	}
 
-	map<int, int> inv;
+	map<int, vector<int> > inv;
 
 	for (int i = 0; i < (int)inverted.size(); i++) {
 		if (inverted[i]) {
-			int net = prs->idx(i);
-			cout << "inverting " << export_variable_name(net, variables).to_string() << "(" << net << ")" << endl;
-			if (net >= 0) {
-				variables.nodes[net].name.back().name = "_" + variables.nodes[net].name.back().name;
+			int idx = prs->idx(i);
+			cout << "inverting " << export_variable_name(idx, variables).to_string() << "(" << idx << ")" << endl;
+			for (auto j = prs->at(idx).remote.begin(); j != prs->at(idx).remote.end(); j++) {
+				if (*j >= 0) {
+					variables.nodes[*j].name.back().name = "_" + variables.nodes[*j].name.back().name;
+				}
 			}
-			prs->invert(net);
+			prs->invert(idx);
 			cout << "done" << endl;
 		}
 	}
@@ -244,29 +246,46 @@ void bubble::save_prs(production_rule_set *prs, ucs::variable_set &variables)
 	// Apply local inversions to production rules
 	for (graph::iterator i = net.begin(); i != net.end(); i++) {
 		if (not i->isochronic and i->bubble) {
-			auto ins = inv.insert(pair<int, int>(i->from, (i->from >= 0 ? (int)prs->nets.size() : prs->flip(prs->nodes.size()))));
+			auto ins = inv.insert(pair<int, vector<int> >(i->from, vector<int>()));
 			auto j = ins.first;
 			if (ins.second) {
-				prs->create(j->second);
-				if (i->from >= 0) {
-					variables.nodes.push_back(variables.nodes[i->from]);
-					if (variables.nodes.back().name.back().name[0] == '_') {
-						variables.nodes.back().name.back().name.erase(variables.nodes.back().name.back().name.begin());
-					} else {
-						variables.nodes.back().name.back().name = "_" + variables.nodes.back().name.back().name;
+				int canonical = i->from >= 0 ? (int)prs->nets.size() : prs->flip(prs->nodes.size());
+				for (auto k = prs->at(i->from).remote.begin(); k != prs->at(i->from).remote.end(); k++) {
+					int idx = *k >= 0 ? (int)prs->nets.size() : prs->flip(prs->nodes.size());
+					prs->create(idx);
+					if (not j->second.empty()) {
+						prs->at(j->second[0]).add_remote(idx);
+					}
+					j->second.push_back(idx);
+					if (*k >= 0) {
+						variables.nodes.push_back(variables.nodes[*k]);
+						if (variables.nodes.back().name.back().name[0] == '_') {
+							variables.nodes.back().name.back().name.erase(variables.nodes.back().name.back().name.begin());
+						} else {
+							variables.nodes.back().name.back().name = "_" + variables.nodes.back().name.back().name;
+						}
+					}
+
+					if (*k == i->from) {
+						canonical = idx;
 					}
 				}
 
-				prs->connect(prs->add_source(j->first, j->second, 0, 1), prs->pwr[0][1]);
-				prs->connect(prs->add_source(j->first, j->second, 1, 0), prs->pwr[0][0]);
+				prs->connect(prs->add_source(i->from, canonical, 0, 1), prs->pwr[0][1]);
+				prs->connect(prs->add_source(i->from, canonical, 1, 0), prs->pwr[0][0]);
 			}
 
 			for (int threshold = 0; threshold < 2; threshold++) {
 				for (auto di = i->gates[threshold].begin(); di != i->gates[threshold].end(); di++) {
-					auto dev = prs->devs.begin()+*di;
-					dev->gate = j->second;
-					prs->at(j->first).gateOf[threshold].erase(find(prs->at(j->first).gateOf[threshold].begin(), prs->at(j->first).gateOf[threshold].end(), *di));
-					prs->at(j->second).gateOf[threshold].insert(lower_bound(prs->at(j->second).gateOf[threshold].begin(), prs->at(j->second).gateOf[threshold].end(), *di), *di);
+					int canonical = j->second[0];
+					for (int k = 0; k < (int)prs->at(i->from).remote.size(); k++) {
+						if (prs->at(i->from).remote[k] == prs->devs[*di].gate) {
+							canonical = j->second[k];
+							break;
+						}
+					}
+
+					prs->move_gate(*di, canonical, 1-threshold);
 				}
 			}
 		}

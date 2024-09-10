@@ -105,6 +105,8 @@ struct production_rule_set
 	int add_hfactor(boolean::cover guard, int drain, int driver, attributes attr=attributes(), vector<int> order=vector<int>());
 	void add(int source, boolean::cover guard, boolean::cover action, attributes attr=attributes(), vector<int> order=vector<int>());
 
+	void move_gate(int dev, int net, int threshold=-1);
+	void move_source_drain(int dev, int source, int drain, int driver=-1);
 	void invert(int net);
 	bool cmos_implementable();
 	void print(const ucs::variable_set &v);
