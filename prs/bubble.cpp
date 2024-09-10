@@ -94,7 +94,7 @@ void bubble::load_prs(const production_rule_set &prs, const ucs::variable_set &v
 					int gate = prs.at(dev->gate).remote[0];
 					
 					arc a(gate, dev->threshold, drain, driver);
-					a.gates[dev->threshold].push_back(*di);
+					a.gates.push_back(*di);
 					auto j = net.insert(a);
 					if (not j.second) {
 						if (j.first->bubble != a.bubble) {
@@ -109,9 +109,9 @@ void bubble::load_prs(const production_rule_set &prs, const ucs::variable_set &v
 							linked[j.first->to] = true;
 							j.first->tval = -1;
 							j.first->isochronic = false;
-							auto pos = lower_bound(j.first->gates[dev->threshold].begin(), j.first->gates[dev->threshold].end(), *di);
-							if (pos == j.first->gates[dev->threshold].end() or *pos != *di) {
-								j.first->gates[dev->threshold].insert(pos, *di);
+							auto pos = lower_bound(j.first->gates.begin(), j.first->gates.end(), *di);
+							if (pos == j.first->gates.end() or *pos != *di) {
+								j.first->gates.insert(pos, *di);
 							}
 						}
 					}
@@ -135,22 +135,7 @@ pair<int, bool> bubble::step(graph::iterator idx, bool forward, vector<int> cycl
 	found = find(cycle.begin(), cycle.end(), forward ? idx->to : idx->from);
 	if (found == cycle.end()) {
 		int n = forward ? idx->to : idx->from;
-		int inb = 0, in = 0;
-		int out = 0;
-		bool isochronic = idx->isochronic;
-		for (graph::iterator j = net.begin(); j != net.end() and not isochronic; j++) {
-			if (j->isochronic) {
-				isochronic = true;
-			}
-			if (j->from == n and not j->bubble) {
-				out = 1;
-			} else if (j->to == n) {
-				inb += j->bubble;
-				in += not j->bubble;
-			}
-		}
-
-		if ((idx->isochronic and idx->bubble) or (not isochronic and inb > in+out)) {
+		if (idx->isochronic and idx->bubble) {
 			inverted_signals = true;
 			inverted[uid(n)] = not inverted[uid(n)];
 			for (graph::iterator j = net.begin(); j != net.end(); j++) {
@@ -184,6 +169,39 @@ pair<int, bool> bubble::step(graph::iterator idx, bool forward, vector<int> cycl
 
 	return pair<int, bool>(cycles_added, inverted_signals);
 }
+
+bool bubble::complete()
+{
+	bool inverted_signals = false;
+	for (int n = -nodes; n < nets; n++) {
+		int inb = 0, in = 0;
+		int out = 0;
+		bool isochronic = false;
+		for (graph::iterator j = net.begin(); j != net.end() and not isochronic; j++) {
+			if (j->from == n) {
+				out = j->bubble ? out : 1;
+				isochronic = j->isochronic;
+			} else if (j->to == n) {
+				inb += j->bubble;
+				in += not j->bubble;
+				isochronic = j->isochronic;
+			}
+		}
+
+		if (not isochronic and inb > in+out) {
+			inverted_signals = true;
+			inverted[uid(n)] = not inverted[uid(n)];
+			for (graph::iterator j = net.begin(); j != net.end(); j++) {
+				if (j->from == n or j->to == n) {
+					j->bubble = not j->bubble;
+				}
+			}
+		}
+	}
+
+	return inverted_signals;
+}
+
 
 void bubble::reshuffle()
 {
@@ -232,14 +250,12 @@ void bubble::save_prs(production_rule_set *prs, ucs::variable_set &variables)
 	for (int i = 0; i < (int)inverted.size(); i++) {
 		if (inverted[i]) {
 			int idx = prs->idx(i);
-			cout << "inverting " << export_variable_name(idx, variables).to_string() << "(" << idx << ")" << endl;
 			for (auto j = prs->at(idx).remote.begin(); j != prs->at(idx).remote.end(); j++) {
 				if (*j >= 0) {
 					variables.nodes[*j].name.back().name = "_" + variables.nodes[*j].name.back().name;
 				}
 			}
 			prs->invert(idx);
-			cout << "done" << endl;
 		}
 	}
 
@@ -275,18 +291,16 @@ void bubble::save_prs(production_rule_set *prs, ucs::variable_set &variables)
 				prs->connect(prs->add_source(i->from, canonical, 1, 0), prs->pwr[0][0]);
 			}
 
-			for (int threshold = 0; threshold < 2; threshold++) {
-				for (auto di = i->gates[threshold].begin(); di != i->gates[threshold].end(); di++) {
-					int canonical = j->second[0];
-					for (int k = 0; k < (int)prs->at(i->from).remote.size(); k++) {
-						if (prs->at(i->from).remote[k] == prs->devs[*di].gate) {
-							canonical = j->second[k];
-							break;
-						}
+			for (auto di = i->gates.begin(); di != i->gates.end(); di++) {
+				int canonical = j->second[0];
+				for (int k = 0; k < (int)prs->at(i->from).remote.size(); k++) {
+					if (prs->at(i->from).remote[k] == prs->devs[*di].gate) {
+						canonical = j->second[k];
+						break;
 					}
-
-					prs->move_gate(*di, canonical, 1-threshold);
 				}
+
+				prs->move_gate(*di, canonical, 1-prs->devs[*di].threshold);
 			}
 		}
 	}

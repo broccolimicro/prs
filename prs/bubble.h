@@ -27,7 +27,7 @@ struct bubble
 		int from;
 		int to;
 		mutable int tval;
-		mutable array<vector<int>, 2> gates;
+		mutable vector<int> gates;
 		mutable bool isochronic;
 		mutable bool bubble;
 	};
@@ -49,6 +49,7 @@ struct bubble
 	void load_prs(const production_rule_set &prs, const ucs::variable_set &variables);
 
 	pair<int, bool> step(graph::iterator idx, bool forward = true, vector<int> cycle = vector<int>());
+	bool complete();
 	void reshuffle();
 
 	void save_prs(production_rule_set *prs, ucs::variable_set &variables);
