@@ -146,20 +146,20 @@ net &production_rule_set::create(int index, bool keep) {
 	return nodes[index];
 }
 
-int production_rule_set::sources(int net, int value) const {
+int production_rule_set::sources(int net, int value, int weak, int pass) const {
 	int result = 0;
 	for (auto i = at(net).sourceOf[value].begin(); i != at(net).sourceOf[value].end(); i++) {
-		if (devs[*i].source == net) {
+		if (devs[*i].source == net and (weak < 0 or (weak == 0 and not devs[*i].attr.weak) or (weak == 1 and devs[*i].attr.weak)) and (pass < 0 or (pass == 0 and not devs[*i].attr.pass) or (pass == 1 and devs[*i].attr.pass))) {
 			result++;
 		}
 	}
 	return result;
 }
 
-int production_rule_set::drains(int net, int value) const {
+int production_rule_set::drains(int net, int value, int weak, int pass) const {
 	int result = 0;
 	for (auto i = at(net).drainOf[value].begin(); i != at(net).drainOf[value].end(); i++) {
-		if (devs[*i].drain == net) {
+		if (devs[*i].drain == net and (weak < 0 or (weak == 0 and not devs[*i].attr.weak) or (weak == 1 and devs[*i].attr.weak)) and (pass < 0 or (pass == 0 and not devs[*i].attr.pass) or (pass == 1 and devs[*i].attr.pass))) {
 			result++;
 		}
 	}

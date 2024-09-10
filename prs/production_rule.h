@@ -92,8 +92,8 @@ struct production_rule_set
 	const net &at(int index) const;
 	net &create(int index, bool keep=false);
 
-	int sources(int net, int value) const;
-	int drains(int net, int value) const;
+	int sources(int net, int value, int weak=-1, int pass=-1) const;
+	int drains(int net, int value, int weak=-1, int pass=-1) const;
 
 	void set_power(int vdd, int gnd);
 	void connect_remote(int n0, int n1);
