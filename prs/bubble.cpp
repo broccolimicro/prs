@@ -49,7 +49,7 @@ bubble::~bubble()
 {
 }
 
-int bubble::uid(int net) {
+int bubble::uid(int net) const {
 	if (net < 0) {
 		return nets-net-1;
 	}
@@ -62,22 +62,27 @@ void bubble::load_prs(const production_rule_set &prs, const ucs::variable_set &v
 	nodes = (int)prs.nodes.size();
 
 	net.clear();
-	vector<arc> bnet;
+	inverted.clear();
+	linked.clear();
+	inverted.resize(nets+nodes, false);
+	linked.resize(nets+nodes, false);
 
 	vector<int> rules;
-	for (int i = 0; i < (int)prs.nets.size(); i++) {
-		if (not prs.nets[i].gateOf.empty()) {
+	for (int i = 0; i < nets; i++) {
+		if (not prs.nets[i].gateOf[0].empty() or not prs.nets[i].gateOf[1].empty()) {
 			rules.push_back(i);
 		}
 	}
 
-	for (int i = 0; i < (int)prs.nodes.size(); i++) {
-		if (not prs.nodes[i].gateOf.empty()) {
+	for (int i = 0; i < nodes; i++) {
+		if (not prs.nodes[i].gateOf[0].empty() or not prs.nodes[i].gateOf[1].empty()) {
 			rules.push_back(prs.flip(i));
 		}
 	}
 
 	for (int i = 0; i < (int)rules.size(); i++) {
+		int drain = prs.at(rules[i]).remote[0];
+
 		vector<int> stack(1, rules[i]);
 		while (not stack.empty()) {
 			int curr = stack.back();
@@ -86,7 +91,9 @@ void bubble::load_prs(const production_rule_set &prs, const ucs::variable_set &v
 			for (int driver = 0; driver < 2; driver++) {
 				for (auto di = prs.at(curr).drainOf[driver].begin(); di != prs.at(curr).drainOf[driver].end(); di++) {
 					auto dev = prs.devs.begin()+*di;
-					arc a(dev->gate, dev->threshold, rules[i], driver);
+					int gate = prs.at(dev->gate).remote[0];
+					
+					arc a(gate, dev->threshold, drain, driver);
 					a.gates[dev->threshold].push_back(*di);
 					auto j = net.insert(a);
 					if (not j.second) {
@@ -98,6 +105,8 @@ void bubble::load_prs(const production_rule_set &prs, const ucs::variable_set &v
 								error("", "gating signal found in production rules {" + export_variable_name(a.from, variables).to_string() + (((a.tval == 1 and not a.bubble) or (a.tval != 1 and a.bubble)) ? "+" : "-") + " -> " + export_variable_name(a.to, variables).to_string() + "}", __FILE__, __LINE__);
 							}
 						} else if (j.first->tval != a.tval) {
+							linked[j.first->from] = true;
+							linked[j.first->to] = true;
 							j.first->tval = -1;
 							j.first->isochronic = false;
 							auto pos = lower_bound(j.first->gates[dev->threshold].begin(), j.first->gates[dev->threshold].end(), *di);
@@ -111,8 +120,6 @@ void bubble::load_prs(const production_rule_set &prs, const ucs::variable_set &v
 			}
 		}
 	}
-
-	inverted.resize(prs.nets.size() + prs.nodes.size(), false);
 }
 
 // cycles added, inverted signals
@@ -127,20 +134,27 @@ pair<int, bool> bubble::step(graph::iterator idx, bool forward, vector<int> cycl
 
 	found = find(cycle.begin(), cycle.end(), forward ? idx->to : idx->from);
 	if (found == cycle.end()) {
-		if (idx->isochronic and idx->bubble and forward) {
-			inverted_signals = true;
-			inverted[uid(idx->to)] = not inverted[uid(idx->to)];
-			for (graph::iterator j = net.begin(); j != net.end(); j++) {
-				if (j->from == idx->to or j->to == idx->to) {
-					j->bubble = not j->bubble;
-				}
+		int n = forward ? idx->to : idx->from;
+		int inb = 0, in = 0;
+		int out = 0;
+		bool isochronic = idx->isochronic;
+		for (graph::iterator j = net.begin(); j != net.end() and not isochronic; j++) {
+			if (j->isochronic) {
+				isochronic = true;
+			}
+			if (j->from == n and not j->bubble) {
+				out = 1;
+			} else if (j->to == n) {
+				inb += j->bubble;
+				in += not j->bubble;
 			}
 		}
-		else if (idx->isochronic and idx->bubble and !forward) {
+
+		if ((idx->isochronic and idx->bubble) or (not isochronic and inb > in+out)) {
 			inverted_signals = true;
-			inverted[uid(idx->from)] = not inverted[uid(idx->from)];
+			inverted[uid(n)] = not inverted[uid(n)];
 			for (graph::iterator j = net.begin(); j != net.end(); j++) {
-				if (j->from == idx->from or j->to == idx->from) {
+				if (j->from == n or j->to == n) {
 					j->bubble = not j->bubble;
 				}
 			}
@@ -213,30 +227,34 @@ void bubble::save_prs(production_rule_set *prs, ucs::variable_set &variables)
 		error("", "negative cycle found " + tempstr, __FILE__, __LINE__);
 	}
 
-	map<size_t, size_t> inv;
+	map<int, int> inv;
 
-	for (size_t i = 0; i < inverted.size(); i++) {
-		if (not inverted[i]) {
+	for (int i = 0; i < (int)inverted.size(); i++) {
+		if (inverted[i]) {
 			int net = prs->idx(i);
+			cout << "inverting " << export_variable_name(net, variables).to_string() << "(" << net << ")" << endl;
 			if (net >= 0) {
 				variables.nodes[net].name.back().name = "_" + variables.nodes[net].name.back().name;
 			}
-
 			prs->invert(net);
+			cout << "done" << endl;
 		}
 	}
 
 	// Apply local inversions to production rules
 	for (graph::iterator i = net.begin(); i != net.end(); i++) {
 		if (not i->isochronic and i->bubble) {
-			auto ins = inv.insert(pair<size_t, size_t>(i->from, variables.nodes.size()));
+			auto ins = inv.insert(pair<int, int>(i->from, (i->from >= 0 ? (int)prs->nets.size() : prs->flip(prs->nodes.size()))));
 			auto j = ins.first;
 			if (ins.second) {
-				variables.nodes.push_back(variables.nodes[i->from]);
-				if (variables.nodes.back().name.back().name[0] == '_') {
-					variables.nodes.back().name.back().name.erase(variables.nodes.back().name.back().name.begin());
-				} else {
-					variables.nodes.back().name.back().name = "_" + variables.nodes.back().name.back().name;
+				prs->create(j->second);
+				if (i->from >= 0) {
+					variables.nodes.push_back(variables.nodes[i->from]);
+					if (variables.nodes.back().name.back().name[0] == '_') {
+						variables.nodes.back().name.back().name.erase(variables.nodes.back().name.back().name.begin());
+					} else {
+						variables.nodes.back().name.back().name = "_" + variables.nodes.back().name.back().name;
+					}
 				}
 
 				prs->connect(prs->add_source(j->first, j->second, 0, 1), prs->pwr[0][1]);

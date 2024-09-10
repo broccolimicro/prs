@@ -496,7 +496,9 @@ void production_rule_set::invert(int net) {
 			devs[*i].threshold = 1-devs[*i].threshold;
 		}
 	}
-	std::swap(at(net).gateOf[0], at(net).gateOf[1]);
+	for (auto i = at(net).remote.begin(); i != at(net).remote.end(); i++) {
+		std::swap(at(*i).gateOf[0], at(*i).gateOf[1]);
+	}
 	
 	vector<int> stack;
 	stack.insert(stack.end(), at(net).drainOf[0].begin(), at(net).drainOf[0].end());
@@ -506,22 +508,32 @@ void production_rule_set::invert(int net) {
 		auto dev = devs.begin()+di;
 		stack.pop_back();
 
+		int pdriver = dev->driver;
+		int psource = dev->source;
 		dev->driver = 1-dev->driver;
 
-		at(dev->drain).drainOf[1-dev->driver].erase(find(at(dev->drain).drainOf[1-dev->driver].begin(), at(dev->drain).drainOf[1-dev->driver].end(), di));
-		at(dev->drain).drainOf[dev->driver].insert(lower_bound(at(dev->drain).drainOf[dev->driver].begin(), at(dev->drain).drainOf[dev->driver].end(), di), di);
+		for (auto i = at(dev->drain).remote.begin(); i != at(dev->drain).remote.end(); i++) {
+			at(*i).drainOf[pdriver].erase(find(at(*i).drainOf[pdriver].begin(), at(*i).drainOf[pdriver].end(), di));
+			at(*i).drainOf[dev->driver].insert(lower_bound(at(*i).drainOf[dev->driver].begin(), at(*i).drainOf[dev->driver].end(), di), di);
+		}
 
 		if (at(dev->source).driver >= 0) {
-			at(dev->source).sourceOf[1-dev->driver].erase(find(at(dev->source).sourceOf[1-dev->driver].begin(), at(dev->source).sourceOf[1-dev->driver].end(), di));
 			dev->source = at(dev->source).mirror;
-			at(dev->source).sourceOf[1-dev->driver].insert(lower_bound(at(dev->source).sourceOf[1-dev->driver].begin(), at(dev->source).sourceOf[1-dev->driver].end(), di), di);	
+			for (auto i = at(psource).remote.begin(); i != at(psource).remote.end(); i++) {
+				at(*i).sourceOf[pdriver].erase(find(at(*i).sourceOf[pdriver].begin(), at(*i).sourceOf[pdriver].end(), di));
+			}
+			for (auto i = at(dev->source).remote.begin(); i != at(dev->source).remote.end(); i++) {
+				at(dev->source).sourceOf[dev->driver].insert(lower_bound(at(dev->source).sourceOf[dev->driver].begin(), at(dev->source).sourceOf[dev->driver].end(), di), di);
+			}	
 		//} else if (not at(dev->source).gateOf.empty()) {
 		//	TODO(edward.bingham) What happens for bubble reshuffling pass
 		//	transistor logic?
-		} else if (at(dev->source).gateOf.empty()) {
-			at(dev->source).sourceOf[1-dev->driver].erase(find(at(dev->source).sourceOf[1-dev->driver].begin(), at(dev->source).sourceOf[1-dev->driver].end(), di));
-			at(dev->source).sourceOf[dev->driver].insert(lower_bound(at(dev->source).sourceOf[dev->driver].begin(), at(dev->source).sourceOf[dev->driver].end(), di), di);
-				
+		} else if (at(dev->source).gateOf[0].empty() and at(dev->source).gateOf[1].empty()) {
+			for (auto i = at(dev->source).remote.begin(); i != at(dev->source).remote.end(); i++) {
+				at(*i).sourceOf[pdriver].erase(find(at(*i).sourceOf[pdriver].begin(), at(*i).sourceOf[pdriver].end(), di));
+				at(*i).sourceOf[dev->driver].insert(lower_bound(at(*i).sourceOf[dev->driver].begin(), at(*i).sourceOf[dev->driver].end(), di), di);
+			}
+
 			stack.insert(stack.end(), at(dev->source).drainOf[0].begin(), at(dev->source).drainOf[0].end());
 			stack.insert(stack.end(), at(dev->source).drainOf[1].begin(), at(dev->source).drainOf[1].end());
 			sort(stack.begin(), stack.end());

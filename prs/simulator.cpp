@@ -381,12 +381,9 @@ void simulator::set(int net, int value, int strength, bool stable, deque<int> *q
 void simulator::set(boolean::cube action, int strength, bool stable, deque<int> *q) {
 	boolean::cube remote_action = action.remote(variables->get_groups());
 	for (int uid = 0; uid < action.size()*16; uid++) {
-		int net = uid;
-		if (net >= (int)base->nets.size()) {
-			net = base->flip(net-base->nets.size());
-		}
+		int net = base->idx(uid);
 		int val = action.get(uid);
-		if (val != 2 and net < (int)nets.size() and at(net) != nullptr) {
+		if (val != 2 and net > base->flip((int)nodes.size()) and net < (int)nets.size() and at(net) != nullptr) {
 			enabled.pop(at(net));
 			at(net) = nullptr;
 		}
@@ -404,12 +401,9 @@ void simulator::set(boolean::cube action, int strength, bool stable, deque<int> 
 	}
 
 	for (int uid = 0; uid < remote_action.size()*16; uid++) {
-		int net = uid;
-		if (net >= (int)base->nets.size()) {
-			net = base->flip(net-base->nets.size());
+		if (remote_action.get(uid) != 2) {
+			propagate(*q, base->idx(uid), false);
 		}
-
-		propagate(*q, net, false);
 	}
 	if (doEval and not q->empty()) {
 		evaluate(*q);

@@ -42,8 +42,9 @@ struct bubble
 	graph net;
 	vector<bubbled_cycle> cycles;
 	vector<bool> inverted;
+	vector<bool> linked;
 
-	int uid(int net);
+	int uid(int net) const;
 
 	void load_prs(const production_rule_set &prs, const ucs::variable_set &variables);
 
