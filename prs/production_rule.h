@@ -64,6 +64,8 @@ struct net {
 	vector<int> remote;
 
 	bool keep;
+	int mirror;
+	int driver;
 
 	void add_remote(int uid);
 };
@@ -74,6 +76,8 @@ struct production_rule_set
 	production_rule_set(const ucs::variable_set &v);
 	~production_rule_set();
 
+	vector<array<int, 2> > pwr;
+
 	vector<device> devs;
 	// nets in this array should be ordered by uid from ucs
 	vector<net> nets;
@@ -82,11 +86,16 @@ struct production_rule_set
 	void init(const ucs::variable_set &v);
 
 	int uid(int index) const;
+	int idx(int uid) const;
 	static int flip(int index);
 	net &at(int index);
 	const net &at(int index) const;
 	net &create(int index, bool keep=false);
 
+	int sources(int net, int value) const;
+	int drains(int net, int value) const;
+
+	void set_power(int vdd, int gnd);
 	void connect_remote(int n0, int n1);
 	int connect(int n0, int n1);
 	void replace(vector<int> &lst, int from, int to);
@@ -95,6 +104,9 @@ struct production_rule_set
 	int add(boolean::cube guard, int drain, int driver, attributes attr=attributes(), vector<int> order=vector<int>());
 	int add_hfactor(boolean::cover guard, int drain, int driver, attributes attr=attributes(), vector<int> order=vector<int>());
 	void add(int source, boolean::cover guard, boolean::cover action, attributes attr=attributes(), vector<int> order=vector<int>());
+
+	void invert(int net);
+	bool cmos_implementable();
 };
 
 }

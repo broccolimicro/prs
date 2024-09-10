@@ -65,11 +65,11 @@ simulator::simulator(const production_rule_set *base, const ucs::variable_set *v
 	this->base = base;
 	this->variables = variables;
 	if (variables != NULL) {
-		for (int i = 0; i < (int)variables->nodes.size(); i++) {
-			if (variables->nodes[i].to_string() == "Vdd") {
+		for (int i = 0; i < (int)base->nets.size(); i++) {
+			if (base->nets[i].driver == 1) {
 				global.set(i, 1);
 				encoding.set(i, 1);
-			} else if (variables->nodes[i].to_string() == "GND") {
+			} else if (base->nets[i].driver == 0) {
 				global.set(i, 0);
 				encoding.set(i, 0);
 			} else {
@@ -424,12 +424,12 @@ void simulator::reset()
 	global.values.clear();
 	encoding.values.clear();
 	strength.values.clear();
-	for (int i = 0; i < (int)variables->nodes.size(); i++) {
-		if (variables->nodes[i].to_string() == "Vdd") {
+	for (int i = 0; i < (int)base->nets.size(); i++) {
+		if (base->nets[i].driver == 1) {
 			global.set(i, 1);
 			encoding.set(i, 1);
 			strength.set(i, -1);
-		} else if (variables->nodes[i].to_string() == "GND") {
+		} else if (base->nets[i].driver == 0) {
 			global.set(i, 0);
 			encoding.set(i, 0);
 			strength.set(i, -1);

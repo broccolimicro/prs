@@ -14,28 +14,46 @@
 namespace prs
 {
 
-/*struct bubble
+struct bubble
 {
 	bubble();
 	~bubble();
 
-	// from, to -> is_isochronic, has_bubble
-	typedef pair<int, int> arc;
-	typedef pair<bool, bool> bubbles;
-	typedef map<arc, bubbles> graph;
+	struct arc {
+		arc();
+		arc(int from, int fval, int to, int tval);
+		~arc();
+
+		int from;
+		int to;
+		mutable int tval;
+		mutable array<vector<int>, 2> gates;
+		mutable bool isochronic;
+		mutable bool bubble;
+	};
+
+	typedef set<arc> graph;
 	typedef vector<int> cycle;
 	typedef pair<cycle, bool> bubbled_cycle;
 	
+	int nets;
+	int nodes;
+
 	graph net;
 	vector<bubbled_cycle> cycles;
 	vector<bool> inverted;
+
+	int uid(int net);
 
 	void load_prs(const production_rule_set &prs, const ucs::variable_set &variables);
 
 	pair<int, bool> step(graph::iterator idx, bool forward = true, vector<int> cycle = vector<int>());
 	void reshuffle();
-	
+
 	void save_prs(production_rule_set *prs, ucs::variable_set &variables);
-};*/
+};
+
+bool operator<(const bubble::arc &a0, const bubble::arc &a1);
+bool operator==(const bubble::arc &a0, const bubble::arc &a1);
 
 }

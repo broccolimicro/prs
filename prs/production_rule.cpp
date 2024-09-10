@@ -1,5 +1,6 @@
 #include "production_rule.h"
 #include <limits>
+#include <common/message.h>
 
 using namespace std;
 
@@ -49,6 +50,8 @@ device::~device() {
 
 net::net(bool keep) {
 	this->keep = keep;
+	this->mirror = 0;
+	this->driver = -1;
 }
 
 net::~net() {
@@ -88,6 +91,13 @@ int production_rule_set::uid(int index) const {
 		return (int)nets.size()+flip(index);
 	}
 	return index;
+}
+
+int production_rule_set::idx(int uid) const {
+	if (uid >= (int)nets.size()) {
+		return flip(uid-(int)nets.size());
+	}
+	return uid;
 }
 
 int production_rule_set::flip(int index) {
@@ -134,6 +144,36 @@ net &production_rule_set::create(int index, bool keep) {
 		nodes[index].keep = true;
 	}
 	return nodes[index];
+}
+
+int production_rule_set::sources(int net, int value) const {
+	int result = 0;
+	for (auto i = at(net).sourceOf[value].begin(); i != at(net).sourceOf[value].end(); i++) {
+		if (devs[*i].source == net) {
+			result++;
+		}
+	}
+	return result;
+}
+
+int production_rule_set::drains(int net, int value) const {
+	int result = 0;
+	for (auto i = at(net).drainOf[value].begin(); i != at(net).drainOf[value].end(); i++) {
+		if (devs[*i].drain == net) {
+			result++;
+		}
+	}
+	return result;
+}
+
+void production_rule_set::set_power(int vdd, int gnd) {
+	at(vdd).keep = true;
+	at(vdd).driver = 1;
+	at(vdd).mirror = gnd;
+	at(gnd).keep = true;
+	at(gnd).driver = 0;
+	at(gnd).mirror = vdd;
+	pwr.push_back({gnd, vdd});
 }
 
 void production_rule_set::connect_remote(int n0, int n1) {
@@ -447,6 +487,55 @@ void production_rule_set::add(int source, boolean::cover guard, boolean::cover a
 			}
 		}
 	}
+}
+
+void production_rule_set::invert(int net) {
+	for (int threshold = 0; threshold < 2; threshold++) {
+		for (auto i = at(net).gateOf[threshold].begin(); i != at(net).gateOf[threshold].end(); i++) {
+			devs[*i].threshold = 1-devs[*i].threshold;
+		}
+	}
+	std::swap(at(net).gateOf[0], at(net).gateOf[1]);
+	
+	vector<int> stack;
+	stack.insert(stack.end(), at(net).drainOf[0].begin(), at(net).drainOf[0].end());
+	stack.insert(stack.end(), at(net).drainOf[1].begin(), at(net).drainOf[1].end());
+	while (not stack.empty()) {
+		int di = stack.back();
+		auto dev = devs.begin()+di;
+		stack.pop_back();
+
+		dev->driver = 1-dev->driver;
+
+		at(dev->drain).drainOf[1-dev->driver].erase(find(at(dev->drain).drainOf[1-dev->driver].begin(), at(dev->drain).drainOf[1-dev->driver].end(), di));
+		at(dev->drain).drainOf[dev->driver].insert(lower_bound(at(dev->drain).drainOf[dev->driver].begin(), at(dev->drain).drainOf[dev->driver].end(), di), di);
+
+		if (at(dev->source).driver >= 0) {
+			at(dev->source).sourceOf[1-dev->driver].erase(find(at(dev->source).sourceOf[1-dev->driver].begin(), at(dev->source).sourceOf[1-dev->driver].end(), di));
+			dev->source = at(dev->source).mirror;
+			at(dev->source).sourceOf[1-dev->driver].insert(lower_bound(at(dev->source).sourceOf[1-dev->driver].begin(), at(dev->source).sourceOf[1-dev->driver].end(), di), di);	
+		//} else if (not at(dev->source).gateOf.empty()) {
+		//	TODO(edward.bingham) What happens for bubble reshuffling pass
+		//	transistor logic?
+		} else if (at(dev->source).gateOf.empty()) {
+			at(dev->source).sourceOf[1-dev->driver].erase(find(at(dev->source).sourceOf[1-dev->driver].begin(), at(dev->source).sourceOf[1-dev->driver].end(), di));
+			at(dev->source).sourceOf[dev->driver].insert(lower_bound(at(dev->source).sourceOf[dev->driver].begin(), at(dev->source).sourceOf[dev->driver].end(), di), di);
+				
+			stack.insert(stack.end(), at(dev->source).drainOf[0].begin(), at(dev->source).drainOf[0].end());
+			stack.insert(stack.end(), at(dev->source).drainOf[1].begin(), at(dev->source).drainOf[1].end());
+			sort(stack.begin(), stack.end());
+			stack.erase(unique(stack.begin(), stack.end()), stack.end());
+		} 
+	}
+}
+
+bool production_rule_set::cmos_implementable() {
+	for (int i = 0; i < (int)devs.size(); i++) {
+		if (devs[i].threshold == devs[i].driver) {
+			return false;
+		}
+	}
+	return true;
 }
 
 }
