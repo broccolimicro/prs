@@ -2,8 +2,11 @@
 #include <common/message.h>
 #include <common/math.h>
 #include <interpret_boolean/export.h>
+#include <stdio.h>
 
 namespace prs {
+
+const bool debug = false;
 
 enabled_transition::enabled_transition() {
 	this->fire_at = 0;
@@ -13,9 +16,10 @@ enabled_transition::enabled_transition() {
 	this->stable = true;
 }
 
-enabled_transition::enabled_transition(uint64_t fire_at, boolean::cube guard, int net, int value, int strength, bool stable) {
+enabled_transition::enabled_transition(uint64_t fire_at, boolean::cube assume, boolean::cube guard, int net, int value, int strength, bool stable) {
 	this->fire_at = fire_at;
 	
+	this->assume = assume;
 	this->guard = guard;
 	this->net = net;
 	this->value = value;
@@ -43,6 +47,11 @@ string enabled_transition::to_string(const ucs::variable_set &v) {
 	if (not stable) {
 		result += " unstable";
 	}
+
+	if (not assume.is_tautology()) {
+		result += " {" + export_expression(assume, v).to_string() + "}";
+	}
+
 	return result;
 }
 
@@ -97,7 +106,7 @@ simulator::queue::event* &simulator::at(int net) {
 	return nodes[base->flip(net)];
 }
 
-void simulator::schedule(uint64_t delay_max, boolean::cube guard, int net, int value, int strength, bool stable) {
+void simulator::schedule(uint64_t delay_max, boolean::cube assume, boolean::cube guard, int net, int value, int strength, bool stable) {
 	if (net >= (int)nets.size()) {
 		nets.resize(net+1, nullptr);
 	} else if (base->flip(net) >= (int)nodes.size()) {
@@ -108,9 +117,10 @@ void simulator::schedule(uint64_t delay_max, boolean::cube guard, int net, int v
 
 	uint64_t fire_at = enabled.now + pareto(delay_max, 5.0);
 	if (at(net) == nullptr) {
-		at(net) = enabled.push(enabled_transition(fire_at, guard, net, value, strength, stable));
+		at(net) = enabled.push(enabled_transition(fire_at, assume, guard, net, value, strength, stable));
 	} else if (at(net)->value.strength == 0 or at(net)->value.value == prev_value) {
 		// it was a vacuous transition, it doesn't go unstable
+		at(net)->value.assume = assume;
 		at(net)->value.guard = guard;
 		at(net)->value.value = value;
 		at(net)->value.strength = strength;
@@ -119,6 +129,7 @@ void simulator::schedule(uint64_t delay_max, boolean::cube guard, int net, int v
 		// TODO(edward.bingham) maybe schedule a new time it fire_at is sooner than the previous event?
 		//enabled.set(devs[dev], enabled_transition(dev, ((devs[dev]->value+1)&(value+1))-1, fire_at));
 		at(net)->value.guard &= guard;
+		at(net)->value.assume &= assume;
 
 		if (value != at(net)->value.value) {
 			at(net)->value.value = -1;
@@ -161,30 +172,39 @@ void simulator::propagate(deque<int> &q, int net, bool vacuous) {
 	q.erase(unique(q.begin(), q.end()), q.end());
 }
 
-void simulator::model(int i, bool reverse, boolean::cube &guard, int &value, int &drive_strength, int &glitch_value, int &glitch_strength, uint64_t &delay_max) {
+void simulator::model(int i, bool reverse, boolean::cube &assume, boolean::cube &guard, int &value, int &drive_strength, int &glitch_value, int &glitch_strength, uint64_t &delay_max) {
 	auto dev = base->devs.begin()+i;
+	if (are_mutex(global, dev->assume)) {
+		return;
+	}
+	boolean::cube assume_action;
+	for (auto c = dev->assume.cubes.begin(); c != dev->assume.cubes.end(); c++) {
+		if (not are_mutex(encoding, *c)) {
+			assume_action &= *c;
+		}
+	}
+	assume_action = assume_action.xoutnulls();
+	boolean::cube observed = encoding & assume_action;
 
 	int source = reverse ? dev->drain : dev->source;
 	int drain = reverse ? dev->source : dev->drain;
 
-	int prev_value = encoding.get(base->uid(drain))+1;
+	int prev_value = observed.get(base->uid(drain))+1;
 
 	//bool isremote = net != drain;
 	int gate_uid = base->uid(dev->gate);
 	int source_uid = base->uid(source);
 
-	int local_value = encoding.get(gate_uid);
+	int local_value = observed.get(gate_uid);
 	int global_value = global.get(gate_uid);
 
-	int source_value = encoding.get(source_uid)+1;
+	int source_value = observed.get(source_uid)+1;
 	int source_strength = 2-strength.get(source_uid);
 	if (dev->attr.weak and source_strength > 1) {
 		source_strength = 1;
 	} else if (source_strength > 2) {
 		source_strength = 2;
 	}
-
-	bool debug = false;
 
 	if (debug) cout << "\t@" << export_variable_name(source, *variables).to_string() << ":" << source_value-1 << "*" << source_strength << "&" << (dev->threshold==0 ? "~" : "") << export_variable_name(dev->gate, *variables).to_string() << ":" << local_value << "->" << export_variable_name(drain, *variables).to_string() << (dev->driver==0 ? "-" : "+") << "*" << drive_strength;
 
@@ -211,6 +231,7 @@ void simulator::model(int i, bool reverse, boolean::cube &guard, int &value, int
 		}
 		if (global_value != 2 and global_value != -1) {
 			guard.set(gate_uid, global_value);
+			assume &= assume_action;
 		}
 	} /*else if (local_value == 1-dev->threshold) {
 		// this device is disabled, value remains unaffected
@@ -240,7 +261,7 @@ void simulator::model(int i, bool reverse, boolean::cube &guard, int &value, int
 
 void simulator::evaluate(deque<int> nets) {
 	deque<int> q = nets;
-	boolean::cube guard;
+	boolean::cube ack;
 	while (not q.empty()) {
 		int net = q.front();
 		int uid = base->uid(net);
@@ -254,19 +275,18 @@ void simulator::evaluate(deque<int> nets) {
 			drive_strength = 1;
 			value = encoding.get(uid)+1;
 		}
-		boolean::cube guard_action;
+		boolean::cube guard;
+		boolean::cube assumed;
 		uint64_t delay_max = std::numeric_limits<uint64_t>::max();
-
-		bool debug = false;
 
 		if (debug) cout << "evaluating " << net << "/(" << base->flip(base->nodes.size()) << "," << base->nets.size() << ") " << export_variable_name(net, *variables).to_string() << ":" << encoding.get(uid) << (base->at(net).keep ? " keep" : "") << endl;
 		for (int driver = 0; driver < 2; driver++) {
 			for (auto i = base->at(net).drainOf[driver].begin(); i != base->at(net).drainOf[driver].end(); i++) {
-				model(*i, false, guard_action, value, drive_strength, glitch_value, glitch_strength, delay_max);
+				model(*i, false, assumed, guard, value, drive_strength, glitch_value, glitch_strength, delay_max);
 			}
 
 			/*for (auto i = base->at(net).rsourceOf[driver].begin(); i != base->at(net).rsourceOf[driver].end(); i++) {
-				model(*i, true, guard_action, value, drive_strength, glitch_value, glitch_strength, delay_max);
+				model(*i, true, assumed, guard, value, drive_strength, glitch_value, glitch_strength, delay_max);
 			}*/
 		}
 		if (delay_max == std::numeric_limits<uint64_t>::max()) {
@@ -275,29 +295,42 @@ void simulator::evaluate(deque<int> nets) {
 
 		if (debug) cout << "\tfinal value = ";
 		bool stable = true;
-		if (glitch_strength >= drive_strength and (glitch_value&value) != value) {
+		if (glitch_strength >= drive_strength and glitch_value != value) {
 			// This net is unstable
-			value &= glitch_value;
+			value = 0;
 			drive_strength = glitch_strength;
 			stable = false;
+			
 			if (debug) cout << "unstable ";
 			// TODO(edward.bingham) schedule another event to resolve the glitch?
 		}
 		value -= 1;
+
+		if (value == 2 and drive_strength == 0) {
+			value = -1;
+		}
+
 		if (debug) cout << value << " strength = " << drive_strength << endl;
 
 		if (delay_max == 0 or (base->at(net).gateOf[0].empty() and base->at(net).gateOf[1].empty())) {
 			if (value >= 0) {
-				guard &= guard_action;
+				ack &= guard & assumed;
+				assume(assumed);
 			}
 
-			set(net, value, drive_strength, stable, &q);
+			int avalue = assumed.get(base->uid(net));
+			if (avalue == 2 or avalue != 1-value) {
+				set(net, value, drive_strength, stable, &q);
+			}
 		} else {
-			schedule(delay_max, guard_action, net, value, drive_strength, stable);
+			int avalue = assumed.get(base->uid(net));
+			if (avalue == 2 or avalue != 1-value) {
+				schedule(delay_max, assumed, guard, net, value, drive_strength, stable);
+			}
 		}
 	}
 
-	encoding &= guard;
+	encoding = encoding & ack;
 }
 
 enabled_transition simulator::fire(int net) {
@@ -312,8 +345,14 @@ enabled_transition simulator::fire(int net) {
 	}
 
 	at(t.net) = nullptr;
+	
+	if (debug) {
+		printf("firing %s->%s%c:%d%s {%s}\n", export_expression(t.guard, *variables).to_string().c_str(), export_variable_name(t.net, *variables).to_string().c_str(), t.value == 0 ? '-' : (t.value == 1 ? '+' : '~'), t.strength, t.stable ? "" : " unstable", export_expression(t.assume, *variables).to_string().c_str());
+	}
+
 	if (t.value >= 0) {
-		encoding &= t.guard;
+		encoding &= t.guard & t.assume;
+		assume(t.assume);
 	}
 
 	deque<int> q;
@@ -321,10 +360,25 @@ enabled_transition simulator::fire(int net) {
 	return t;
 }
 
+void simulator::assume(boolean::cube assume) {
+	for (int uid = 0; uid < (int)assume.values.size()*16; uid++) {
+		int value = assume.get(uid);
+		int net = base->idx(uid);
+		if (value != 2) {
+			auto e = at(net);
+			if (e != nullptr and (e->value.value != value or not e->value.stable)) {
+				if (debug) printf("popping event %d\n", net);
+				enabled.pop(e);
+				at(net) = nullptr;
+			}
+		}
+	}
+}
+
 void simulator::set(int net, int value, int strength, bool stable, deque<int> *q) {
-	if (not stable) {
+	if (not stable and strength > 0) {
 		error("", "unstable rule " + export_variable_name(net, *variables).to_string() + (value == 1 ? "+" : (value == 0 ? "-" : "~")), __FILE__, __LINE__);
-	} else if (value == -1) {
+	} else if (value == -1 and strength > 0) {
 		error("", "interference " + export_variable_name(net, *variables).to_string(), __FILE__, __LINE__);
 	}
 	/*if (value == 2) {
@@ -454,8 +508,13 @@ void simulator::reset()
 void simulator::wait()
 {
 	vector<vector<int> > groups = variables->get_groups();
-	encoding = encoding.remote(groups);
-	encoding = global.remote(groups);
+	for (int uid = 0; uid < (int)global.values.size()*16; uid++) {
+		int net = base->idx(uid);
+		int value = global.get(uid);
+		if (encoding.get(uid) != value) {
+			schedule(10000, 1, 1, net, value, 2, true);
+		}
+	}
 }
 
 void simulator::run()
