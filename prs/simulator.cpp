@@ -116,7 +116,7 @@ void simulator::schedule(uint64_t delay_max, boolean::cube guard, int net, int v
 		at(net)->value.strength = strength;
 		at(net)->value.stable = stable;
 	} else {
-		// TODO(edward.bingham) handle all of the possible interactions here
+		// TODO(edward.bingham) maybe schedule a new time it fire_at is sooner than the previous event?
 		//enabled.set(devs[dev], enabled_transition(dev, ((devs[dev]->value+1)&(value+1))-1, fire_at));
 		at(net)->value.guard &= guard;
 
@@ -280,7 +280,6 @@ void simulator::evaluate(deque<int> nets) {
 			value &= glitch_value;
 			drive_strength = glitch_strength;
 			stable = false;
-			// TODO(edward.bingham) flag an error
 			if (debug) cout << "unstable ";
 			// TODO(edward.bingham) schedule another event to resolve the glitch?
 		}

@@ -30,7 +30,7 @@ struct attributes {
 
 struct device {
 	device();
-	device(int source, int gate, int drain, int threshold, int driver, attributes attr=attributes());
+	device(int source, int gate, int drain, int threshold, int driver, boolean::cover assume=1, attributes attr=attributes());
 	~device();
 
 	// index into nets if positive or nodes if negative
@@ -40,6 +40,8 @@ struct device {
 	
 	int threshold;
 	int driver;
+
+	boolean::cover assume;
 
 	attributes attr;
 };
@@ -92,18 +94,19 @@ struct production_rule_set
 	const net &at(int index) const;
 	net &create(int index, bool keep=false);
 
-	int sources(int net, int value, int weak=-1, int pass=-1) const;
-	int drains(int net, int value, int weak=-1, int pass=-1) const;
+	int sources(int net, int value, int weak=-1, int pass=-1, boolean::cover assume=0) const;
+	int drains(int net, int value, int weak=-1, int pass=-1, boolean::cover assume=0) const;
+	vector<boolean::cover> drain_groups(int net, int value, int weak=-1, int pass=-1) const;
 
 	void set_power(int vdd, int gnd);
 	void connect_remote(int n0, int n1);
 	int connect(int n0, int n1);
 	void replace(vector<int> &lst, int from, int to);
-	int add_source(int gate, int drain, int threshold, int driver, attributes attr=attributes());
-	int add_drain(int source, int gate, int threshold, int driver, attributes attr=attributes());
-	int add(boolean::cube guard, int drain, int driver, attributes attr=attributes(), vector<int> order=vector<int>());
-	int add_hfactor(boolean::cover guard, int drain, int driver, attributes attr=attributes(), vector<int> order=vector<int>());
-	void add(int source, boolean::cover guard, boolean::cover action, attributes attr=attributes(), vector<int> order=vector<int>());
+	int add_source(int gate, int drain, int threshold, int driver, boolean::cover assume=1, attributes attr=attributes());
+	int add_drain(int source, int gate, int threshold, int driver, boolean::cover assume=1, attributes attr=attributes());
+	int add(boolean::cube guard, int drain, int driver, boolean::cover assume=1, attributes attr=attributes(), vector<int> order=vector<int>());
+	int add_hfactor(boolean::cover guard, int drain, int driver, boolean::cover assume=1, attributes attr=attributes(), vector<int> order=vector<int>());
+	void add(int source, boolean::cover guard, boolean::cover action, boolean::cover assume=1, attributes attr=attributes(), vector<int> order=vector<int>());
 
 	void move_gate(int dev, int net, int threshold=-1);
 	void move_source_drain(int dev, int source, int drain, int driver=-1);

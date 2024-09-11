@@ -35,14 +35,16 @@ device::device() {
 	drain = -1;
 	threshold = 1;
 	driver = 0;
+	assume = 1;
 }
 
-device::device(int source, int gate, int drain, int threshold, int driver, attributes attr) {
+device::device(int source, int gate, int drain, int threshold, int driver, boolean::cover assume, attributes attr) {
 	this->source = source;
 	this->gate = gate;
 	this->drain = drain;
 	this->threshold = threshold;
 	this->driver = driver;
+	this->assume = assume;
 	this->attr = attr;
 }
 
@@ -147,21 +149,38 @@ net &production_rule_set::create(int index, bool keep) {
 	return nodes[index];
 }
 
-int production_rule_set::sources(int net, int value, int weak, int pass) const {
+int production_rule_set::sources(int net, int value, int weak, int pass, boolean::cover assume) const {
 	int result = 0;
 	for (auto i = at(net).sourceOf[value].begin(); i != at(net).sourceOf[value].end(); i++) {
-		if (devs[*i].source == net and (weak < 0 or (weak == 0 and not devs[*i].attr.weak) or (weak == 1 and devs[*i].attr.weak)) and (pass < 0 or (pass == 0 and not devs[*i].attr.pass) or (pass == 1 and devs[*i].attr.pass))) {
+		if (devs[*i].source == net and (weak < 0 or (weak == 0 and not devs[*i].attr.weak) or (weak == 1 and devs[*i].attr.weak)) and (pass < 0 or (pass == 0 and not devs[*i].attr.pass) or (pass == 1 and devs[*i].attr.pass)) and (assume.is_null() or devs[*i].assume == assume)) {
 			result++;
 		}
 	}
 	return result;
 }
 
-int production_rule_set::drains(int net, int value, int weak, int pass) const {
+int production_rule_set::drains(int net, int value, int weak, int pass, boolean::cover assume) const {
 	int result = 0;
 	for (auto i = at(net).drainOf[value].begin(); i != at(net).drainOf[value].end(); i++) {
-		if (devs[*i].drain == net and (weak < 0 or (weak == 0 and not devs[*i].attr.weak) or (weak == 1 and devs[*i].attr.weak)) and (pass < 0 or (pass == 0 and not devs[*i].attr.pass) or (pass == 1 and devs[*i].attr.pass))) {
+		if (devs[*i].drain == net and (weak < 0 or (weak == 0 and not devs[*i].attr.weak) or (weak == 1 and devs[*i].attr.weak)) and (pass < 0 or (pass == 0 and not devs[*i].attr.pass) or (pass == 1 and devs[*i].attr.pass)) and (assume.is_null() or devs[*i].assume == assume)) {
 			result++;
+		}
+	}
+	return result;
+}
+
+vector<boolean::cover> production_rule_set::drain_groups(int net, int value, int weak, int pass) const {
+	vector<boolean::cover> result;
+	for (auto i = at(net).drainOf[value].begin(); i != at(net).drainOf[value].end(); i++) {
+		auto dev = devs.begin()+*i;
+		if (dev->drain == net and (weak < 0 or (weak == 0 and not dev->attr.weak) or (weak == 1 and dev->attr.weak)) and (pass < 0 or (pass == 0 and not dev->attr.pass) or (pass == 1 and dev->attr.pass))) {
+			bool found = false;
+			for (auto j = result.begin(); j != result.end() and not found; j++) {
+				found = *j == dev->assume;
+			}
+			if (not found) {
+				result.push_back(dev->assume);
+			} 
 		}
 	}
 	return result;
@@ -378,7 +397,7 @@ void production_rule_set::replace(vector<int> &lst, int from, int to) {
 	}
 }
 
-int production_rule_set::add_source(int gate, int drain, int threshold, int driver, attributes attr) {
+int production_rule_set::add_source(int gate, int drain, int threshold, int driver, boolean::cover assume, attributes attr) {
 	if (gate >= 0 and gate >= (int)nets.size()) {
 		nets.resize(gate+1);
 	} else if (gate < 0 and flip(gate) >= (int)nodes.size()) {
@@ -405,11 +424,11 @@ int production_rule_set::add_source(int gate, int drain, int threshold, int driv
 			at(*i).rsourceOf[driver].push_back(devs.size());
 		}
 	}
-	devs.push_back(device(source, gate, drain, threshold, driver, attr));
+	devs.push_back(device(source, gate, drain, threshold, driver, assume, attr));
 	return source;
 }
 
-int production_rule_set::add_drain(int source, int gate, int threshold, int driver, attributes attr) {
+int production_rule_set::add_drain(int source, int gate, int threshold, int driver, boolean::cover assume, attributes attr) {
 	if (gate >= 0 and gate >= (int)nets.size()) {
 		nets.resize(gate+1);
 	} else if (gate < 0 and flip(gate) >= (int)nodes.size()) {
@@ -434,15 +453,15 @@ int production_rule_set::add_drain(int source, int gate, int threshold, int driv
 			at(*i).rsourceOf[driver].push_back(devs.size());
 		}
 	}
-	devs.push_back(device(source, gate, drain, threshold, driver, attr));
+	devs.push_back(device(source, gate, drain, threshold, driver, assume, attr));
 	return drain;
 }
 
-int production_rule_set::add(boolean::cube guard, int drain, int driver, attributes attr, vector<int> order) {
+int production_rule_set::add(boolean::cube guard, int drain, int driver, boolean::cover assume, attributes attr, vector<int> order) {
 	for (int i = 0; i < (int)order.size() and not guard.is_tautology(); i++) {
 		int threshold = guard.get(order[i]);
 		if (threshold != 2) {
-			drain = add_source(order[i], drain, threshold, driver, attr);
+			drain = add_source(order[i], drain, threshold, driver, assume, attr);
 			guard.hide(order[i]);
 		}
 	}
@@ -450,41 +469,41 @@ int production_rule_set::add(boolean::cube guard, int drain, int driver, attribu
 	for (int i = 0; i < (int)nets.size() and not guard.is_tautology(); i++) {
 		int threshold = guard.get(i);
 		if (threshold != 2) {
-			drain = add_source(i, drain, threshold, driver, attr);
+			drain = add_source(i, drain, threshold, driver, assume, attr);
 			guard.hide(i);
 		}
 	}
 	return drain;
 }
 
-int production_rule_set::add_hfactor(boolean::cover guard, int drain, int driver, attributes attr, vector<int> order) {
+int production_rule_set::add_hfactor(boolean::cover guard, int drain, int driver, boolean::cover assume, attributes attr, vector<int> order) {
 	if (guard.cubes.size() == 1) {
-		return add(guard.cubes[0], drain, driver, attr, order);
+		return add(guard.cubes[0], drain, driver, assume, attr, order);
 	}
 
 	boolean::cube common = guard.supercube();
 	if (not common.is_tautology()) {
 		guard.cofactor(common);
-		drain = add(common, drain, driver, attr, order);
+		drain = add(common, drain, driver, assume, attr, order);
 	}
 
 	if (not guard.is_tautology()) {
 		boolean::cover left, right;
 		guard.partition(left, right);
-		int drainLeft = add_hfactor(left, drain, driver, attr, order);
-		drain = add_hfactor(right, drain, driver, attr, order);
+		int drainLeft = add_hfactor(left, drain, driver, assume, attr, order);
+		drain = add_hfactor(right, drain, driver, assume, attr, order);
 		drain = connect(drainLeft, drain);
 	}
 
 	return drain;
 }
 
-void production_rule_set::add(int source, boolean::cover guard, boolean::cover action, attributes attr, vector<int> order) {
+void production_rule_set::add(int source, boolean::cover guard, boolean::cover action, boolean::cover assume, attributes attr, vector<int> order) {
 	for (auto c = action.cubes.begin(); c != action.cubes.end(); c++) {
 		for (int i = 0; i < (int)nets.size(); i++) {
 			int driver = c->get(i);
 			if (driver != 2) {
-				connect(add_hfactor(guard, i, driver, attr, order), source);
+				connect(add_hfactor(guard, i, driver, assume, attr, order), source);
 			}
 		}
 	}
@@ -600,7 +619,7 @@ void production_rule_set::print(const ucs::variable_set &v) {
 
 	cout << "devs " << devs.size() << endl;
 	for (int i = 0; i < (int)devs.size(); i++) {
-		cout << "dev " << i << ": source=" << export_variable_name(devs[i].source, v).to_string() << "(" << devs[i].source << ") gate=" << export_variable_name(devs[i].gate, v).to_string() << "(" << devs[i].gate << ") drain=" << export_variable_name(devs[i].drain, v).to_string() << "(" << devs[i].drain << ") threshold=" << devs[i].threshold << (devs[i].attr.weak ? " weak" : "") << (devs[i].attr.pass ? " pass" : "") << endl;
+		cout << "dev " << i << ": source=" << export_variable_name(devs[i].source, v).to_string() << "(" << devs[i].source << ") gate=" << export_variable_name(devs[i].gate, v).to_string() << "(" << devs[i].gate << ") drain=" << export_variable_name(devs[i].drain, v).to_string() << "(" << devs[i].drain << ") threshold=" << devs[i].threshold << (not devs[i].assume.is_tautology() ? " {" + export_expression(devs[i].assume, v).to_string() + "}" : "") << (devs[i].attr.weak ? " weak" : "") << (devs[i].attr.pass ? " pass" : "") << endl;
 	}
 }
 
