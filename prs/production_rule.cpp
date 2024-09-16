@@ -77,6 +77,23 @@ production_rule_set::production_rule_set(const ucs::variable_set &v) {
 production_rule_set::~production_rule_set() {
 }
 
+void production_rule_set::print(const ucs::variable_set &v) {
+	cout << "nets " << nets.size() << endl;
+	for (int i = 0; i < (int)nets.size(); i++) {
+		cout << "net " << i << ": " << export_variable_name(i, v).to_string() << " gateOf=" << to_string(nets[i].gateOf[0]) << to_string(nets[i].gateOf[1]) << " sourceOf=" << to_string(nets[i].sourceOf[0]) << to_string(nets[i].sourceOf[1]) << " drainOf=" << to_string(nets[i].drainOf[0]) << to_string(nets[i].drainOf[1]) << " remote=" << to_string(nets[i].remote) << (nets[i].keep ? " keep" : "") << endl;
+	}
+
+	cout << "nodes " << nodes.size() << endl;
+	for (int i = 0; i < (int)nodes.size(); i++) {
+		cout << "node " << i << ": " << export_variable_name(flip(i), v).to_string() << " gateOf=" << to_string(nodes[i].gateOf[0]) << to_string(nodes[i].gateOf[1]) << " sourceOf=" << to_string(nodes[i].sourceOf[0]) << to_string(nodes[i].sourceOf[1]) << " drainOf=" << to_string(nodes[i].drainOf[0]) << to_string(nodes[i].drainOf[1]) << " remote=" << to_string(nodes[i].remote) << (nodes[i].keep ? " keep" : "") << endl;
+	}
+
+	cout << "devs " << devs.size() << endl;
+	for (int i = 0; i < (int)devs.size(); i++) {
+		cout << "dev " << i << ": source=" << export_variable_name(devs[i].source, v).to_string() << "(" << devs[i].source << ") gate=" << export_variable_name(devs[i].gate, v).to_string() << "(" << devs[i].gate << ") drain=" << export_variable_name(devs[i].drain, v).to_string() << "(" << devs[i].drain << ") threshold=" << devs[i].threshold << " driver=" << devs[i].driver << (not devs[i].assume.is_tautology() ? " {" + export_expression(devs[i].assume, v).to_string() + "}" : "") << (devs[i].attr.weak ? " weak" : "") << (devs[i].attr.pass ? " pass" : "") << endl;
+	}
+}
+
 void production_rule_set::init(const ucs::variable_set &v) {
 	if (nets.size() < v.nodes.size()) {
 		nets.resize(v.nodes.size());
@@ -606,20 +623,137 @@ bool production_rule_set::cmos_implementable() {
 	return true;
 }
 
-void production_rule_set::print(const ucs::variable_set &v) {
-	cout << "nets " << nets.size() << endl;
-	for (int i = 0; i < (int)nets.size(); i++) {
-		cout << "net " << i << ": " << export_variable_name(i, v).to_string() << " gateOf=" << to_string(nets[i].gateOf[0]) << to_string(nets[i].gateOf[1]) << " sourceOf=" << to_string(nets[i].sourceOf[0]) << to_string(nets[i].sourceOf[1]) << " drainOf=" << to_string(nets[i].drainOf[0]) << to_string(nets[i].drainOf[1]) << " remote=" << to_string(nets[i].remote) << (nets[i].keep ? " keep" : "") << endl;
+boolean::cover production_rule_set::guard_of(int net, int driver, bool weak) {
+	struct walker {
+		int net;
+		boolean::cube guard;
+	};
+
+	boolean::cover result;
+	vector<walker> stack;
+	stack.push_back({net, 1});
+	while (not stack.empty()) {
+		walker curr = stack.back();
+		stack.pop_back();
+
+		if ((curr.net != net
+			and (not at(curr.net).gateOf[0].empty()
+				or not at(curr.net).gateOf[1].empty()))
+			or drains(curr.net, driver, weak?1:0) == 0) {
+			if (curr.net == net) {
+				continue;
+			}
+
+			if (at(curr.net).driver < 0) {
+				curr.guard.set(uid(curr.net), driver);
+			}
+
+			result |= curr.guard;
+			continue;
+		}
+
+		for (auto i = at(curr.net).drainOf[driver].begin(); i != at(curr.net).drainOf[driver].end(); i++) {
+			auto dev = devs.begin()+*i;
+			if (dev->drain != curr.net or dev->driver != driver or dev->attr.weak != weak) {
+				continue;
+			}
+			boolean::cube guard = curr.guard;
+			guard.set(uid(dev->gate), dev->threshold);
+			stack.push_back({dev->source, guard});
+		}
 	}
 
-	cout << "nodes " << nodes.size() << endl;
-	for (int i = 0; i < (int)nodes.size(); i++) {
-		cout << "node " << i << ": " << export_variable_name(flip(i), v).to_string() << " gateOf=" << to_string(nodes[i].gateOf[0]) << to_string(nodes[i].gateOf[1]) << " sourceOf=" << to_string(nodes[i].sourceOf[0]) << to_string(nodes[i].sourceOf[1]) << " drainOf=" << to_string(nodes[i].drainOf[0]) << to_string(nodes[i].drainOf[1]) << " remote=" << to_string(nodes[i].remote) << (nodes[i].keep ? " keep" : "") << endl;
+	return result;
+}
+
+bool production_rule_set::has_inverter(int net, int &_net) {
+	array<vector<int>, 2> unary;
+	for (int i = 0; i < 2; i++) {
+		for (auto j = at(net).gateOf[i].begin(); j != at(net).gateOf[i].end(); j++) {
+			auto dev = devs.begin()+*j;
+			if (dev->gate != net) {
+				continue;
+			}
+			if (at(dev->source).driver == 1-dev->threshold) {
+				unary[i].push_back(*j);
+			}
+		}
 	}
 
-	cout << "devs " << devs.size() << endl;
-	for (int i = 0; i < (int)devs.size(); i++) {
-		cout << "dev " << i << ": source=" << export_variable_name(devs[i].source, v).to_string() << "(" << devs[i].source << ") gate=" << export_variable_name(devs[i].gate, v).to_string() << "(" << devs[i].gate << ") drain=" << export_variable_name(devs[i].drain, v).to_string() << "(" << devs[i].drain << ") threshold=" << devs[i].threshold << (not devs[i].assume.is_tautology() ? " {" + export_expression(devs[i].assume, v).to_string() + "}" : "") << (devs[i].attr.weak ? " weak" : "") << (devs[i].attr.pass ? " pass" : "") << endl;
+	for (auto i = unary[0].begin(); i != unary[0].end(); i++) {
+		for (auto j = unary[1].begin(); j != unary[1].end(); j++) {
+			if (devs[*i].drain != devs[*j].drain) {
+				continue;
+			}
+			int n = devs[*i].drain;
+
+			boolean::cover up = guard_of(n, 1);
+			boolean::cover dn = guard_of(n, 0);
+
+			if (up == boolean::cover(uid(net), 0) and dn == boolean::cover(uid(net), 1)) {
+				_net = n;
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+void production_rule_set::add_keepers(bool share, boolean::cover keep) {
+	bool hasweakpwr = false;
+	array<int, 2> sharedweakpwr={
+		std::numeric_limits<int>::max(),
+		std::numeric_limits<int>::max()
+	};
+	for (int net = -(int)nodes.size(); net < (int)nets.size(); net++) {
+		if (not at(net).keep) {
+			continue;
+		}
+
+		boolean::cover up = guard_of(net, 1, false);
+		boolean::cover dn = guard_of(net, 0, false);
+
+		boolean::cover keep_up = guard_of(net, 1, true);
+		boolean::cover keep_dn = guard_of(net, 0, true);
+
+		cout << "checking keepers for" << endl;
+		cout << "up: " << up << endl;
+		cout << "dn: " << dn << endl;
+		cout << "keep_up: " << keep_up << endl;
+		cout << "keep_dn: " << keep_dn << endl;
+		cout << "keep: " << keep << endl;
+		cout << "covered: " << (up|dn|keep_up|keep_dn) << endl;
+
+		at(net).keep = false;
+		if (at(net).driver >= 0 or keep.is_subset_of(up|dn|keep_up|keep_dn)) {
+			cout << "not needed" << endl << endl;
+			continue;
+		}
+		cout << "making keeper" << endl << endl;
+
+		// identify output inverter if it exists, create it if it doesn't
+		// (using the half cycle timing assumption)
+		int _net=std::numeric_limits<int>::max();
+		if (not has_inverter(net, _net)) {
+			_net = flip(nodes.size());
+			create(_net);
+			connect(add_source(net, _net, 1, 0), pwr[0][0]);
+			connect(add_source(net, _net, 0, 1), pwr[0][1]);
+		}
+
+		array<int, 2> weakpwr;
+		weakpwr[0] = sharedweakpwr[0];
+		weakpwr[1] = sharedweakpwr[1];
+		if (not share or not hasweakpwr) {
+			weakpwr[0] = add_drain(pwr[0][0], pwr[0][1], 1, 0, 1, attributes(true, false));
+			weakpwr[1] = add_drain(pwr[0][1], pwr[0][0], 0, 1, 1, attributes(true, false));
+			sharedweakpwr = weakpwr;
+			hasweakpwr = true;
+		}
+
+		connect(add_source(_net, net, 1, 0), weakpwr[0]);
+		connect(add_source(_net, net, 0, 1), weakpwr[1]);
 	}
 }
 

@@ -85,6 +85,7 @@ struct production_rule_set
 	vector<net> nets;
 	vector<net> nodes;
 
+	void print(const ucs::variable_set &v);
 	void init(const ucs::variable_set &v);
 
 	int uid(int index) const;
@@ -112,7 +113,11 @@ struct production_rule_set
 	void move_source_drain(int dev, int source, int drain, int driver=-1);
 	void invert(int net);
 	bool cmos_implementable();
-	void print(const ucs::variable_set &v);
+
+	boolean::cover guard_of(int net, int driver, bool weak=false);
+
+	bool has_inverter(int net, int &_net);
+	void add_keepers(bool share=true, boolean::cover keep=1);
 };
 
 }
