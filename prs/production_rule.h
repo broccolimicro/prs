@@ -103,6 +103,7 @@ struct production_rule_set
 	void connect_remote(int n0, int n1);
 	int connect(int n0, int n1);
 	void replace(vector<int> &lst, int from, int to);
+	void replace(map<int, int> &lst, int from, int to);
 	int add_source(int gate, int drain, int threshold, int driver, boolean::cover assume=1, attributes attr=attributes());
 	int add_drain(int source, int gate, int threshold, int driver, boolean::cover assume=1, attributes attr=attributes());
 	int add(boolean::cube guard, int drain, int driver, boolean::cover assume=1, attributes attr=attributes(), vector<int> order=vector<int>());

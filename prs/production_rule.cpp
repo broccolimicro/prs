@@ -414,6 +414,22 @@ void production_rule_set::replace(vector<int> &lst, int from, int to) {
 	}
 }
 
+void production_rule_set::replace(map<int, int> &lst, int from, int to) {
+	if (to == from) {
+		return;
+	}
+	for (auto i = lst.begin(); i != lst.end(); i++) {
+		if (i->second == from) {
+			i->second = to;
+		}
+		if (from >= 0 and i->second > from) {
+			i->second--;
+		} else if (from < 0 and i->second < from) {
+			i->second++;
+		}
+	}
+}
+
 int production_rule_set::add_source(int gate, int drain, int threshold, int driver, boolean::cover assume, attributes attr) {
 	if (gate >= 0 and gate >= (int)nets.size()) {
 		nets.resize(gate+1);

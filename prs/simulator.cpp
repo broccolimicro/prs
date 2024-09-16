@@ -221,13 +221,13 @@ void simulator::model(int i, bool reverse, boolean::cube &assume, boolean::cube 
 			if (dev->attr.delay_max < delay_max) {
 				delay_max = dev->attr.delay_max;
 			}
-			if (debug) cout << "\tstronger" << endl;
+			if (debug) cout << "\tstronger " << value << "*" << drive_strength << endl;
 		} else /*if (drive_strength == source_strength)*/ {
 			value &= source_value;
 			if (dev->attr.delay_max < delay_max) {
 				delay_max = dev->attr.delay_max;
 			}
-			if (debug) cout << "\tdriven" << endl;
+			if (debug) cout << "\tdriven " << value << "*" << drive_strength << endl;
 		}
 		if (global_value != 2 and global_value != -1) {
 			guard.set(gate_uid, global_value);
@@ -244,13 +244,13 @@ void simulator::model(int i, bool reverse, boolean::cube &assume, boolean::cube 
 			if (dev->attr.delay_max < delay_max) {
 				delay_max = dev->attr.delay_max;
 			}
-			if (debug) cout << "\tstronger glitch" << endl;
+			if (debug) cout << "\tstronger glitch " << glitch_value << "*" << glitch_strength  << endl;
 		} else if (source_strength == glitch_strength) {
 			glitch_value &= source_value;
 			if (dev->attr.delay_max < delay_max) {
 				delay_max = dev->attr.delay_max;
 			}
-			if (debug) cout << "\tglitch" << endl;
+			if (debug) cout << "\tglitch " << glitch_value << "*" << glitch_strength << endl;
 		} else {
 			if (debug) cout << "\tweaker" << endl;
 		}
@@ -471,25 +471,19 @@ void simulator::reset()
 	global.values.clear();
 	encoding.values.clear();
 	strength.values.clear();
-	for (int i = 0; i < (int)base->nets.size(); i++) {
-		if (base->nets[i].driver == 1) {
-			global.set(i, 1);
-			encoding.set(i, 1);
-			strength.set(i, -1);
-		} else if (base->nets[i].driver == 0) {
-			global.set(i, 0);
-			encoding.set(i, 0);
-			strength.set(i, -1);
-		} else {
-			global.set(i, -1);
-			encoding.set(i, -1);
+	for (int i = -(int)base->nodes.size(); i < (int)base->nets.size(); i++) {
+		int uid = base->uid(i);
+		global.set(uid, -1);
+		encoding.set(uid, -1);
+	}
+
+	for (int i = -(int)base->nodes.size(); i < (int)base->nets.size(); i++) {
+		if (base->at(i).driver >= 0) {
+			set(base->uid(i), base->at(i).driver);
 		}
 	}
 
-	for (int i = 0; i < (int)base->nodes.size(); i++) {
-		global.set(base->nets.size()+i, -1);
-		encoding.set(base->nets.size()+i, -1);
-	}
+	wait();
 
 	for (int i = 0; i < (int)variables->nodes.size(); i++) {
 		if (variables->nodes[i].to_string() == "Reset") {
