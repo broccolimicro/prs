@@ -174,11 +174,11 @@ void simulator::propagate(deque<int> &q, int net, bool vacuous) {
 
 void simulator::model(int i, bool reverse, boolean::cube &assume, boolean::cube &guard, int &value, int &drive_strength, int &glitch_value, int &glitch_strength, uint64_t &delay_max) {
 	auto dev = base->devs.begin()+i;
-	if (are_mutex(global, dev->assume)) {
+	if (are_mutex(global, dev->attr.assume)) {
 		return;
 	}
 	boolean::cube assume_action;
-	for (auto c = dev->assume.cubes.begin(); c != dev->assume.cubes.end(); c++) {
+	for (auto c = dev->attr.assume.cubes.begin(); c != dev->attr.assume.cubes.end(); c++) {
 		if (not are_mutex(encoding, *c)) {
 			assume_action &= *c;
 		}
@@ -220,6 +220,8 @@ void simulator::model(int i, bool reverse, boolean::cube &assume, boolean::cube 
 			drive_strength = source_strength;
 			if (dev->attr.delay_max < delay_max) {
 				delay_max = dev->attr.delay_max;
+			} else {
+				// TODO(edward.bingham) weak instability?
 			}
 			if (debug) cout << "\tstronger " << value << "*" << drive_strength << endl;
 		} else /*if (drive_strength == source_strength)*/ {
@@ -227,6 +229,7 @@ void simulator::model(int i, bool reverse, boolean::cube &assume, boolean::cube 
 			if (dev->attr.delay_max < delay_max) {
 				delay_max = dev->attr.delay_max;
 			}
+			// TODO(edward.bingham) this might also cause instability
 			if (debug) cout << "\tdriven " << value << "*" << drive_strength << endl;
 		}
 		if (global_value != 2 and global_value != -1) {
@@ -312,6 +315,7 @@ void simulator::evaluate(deque<int> nets) {
 
 		if (debug) cout << value << " strength = " << drive_strength << endl;
 
+		// TODO(edward.bingham) we should only propagate instantly here if delay_max is 0, we need to handle the other condition in the import/export of production rules, not in the simulator
 		if (delay_max == 0 or (base->at(net).gateOf[0].empty() and base->at(net).gateOf[1].empty())) {
 			if (value >= 0) {
 				ack &= guard & assumed;

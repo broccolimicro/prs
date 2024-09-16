@@ -8,25 +8,40 @@ using namespace std;
 namespace prs
 {
 
+const bool debug = false;
+
 attributes::attributes() {
 	weak = false;
 	pass = false;
-	width = 0.0;
-	length = 0.0;
-	variant = "";
+	assume = 1;
 	delay_max = 10000; // 10ns
+	size = 0.0;
+	variant = "";
 }
 
-attributes::attributes(bool weak, bool pass, float width, float length, string variant, uint64_t delay_max) {
+attributes::attributes(bool weak, bool pass, boolean::cube assume, uint64_t delay_max) {
 	this->weak = weak;
 	this->pass = pass;
-	this->width = width;
-	this->length = length;
-	this->variant = variant;
+	this->assume = assume;
 	this->delay_max = delay_max;
+	this->size = 0.0;
+	this->variant = "";
 }
 
 attributes::~attributes() {
+}
+
+void attributes::set_internal() {
+	assume = 1;
+	delay_max = 0;
+}
+
+bool operator==(const attributes &a0, const attributes &a1) {
+	return a0.weak == a1.weak and a0.pass == a1.pass and a0.delay_max == a1.delay_max and a0.assume == a1.assume;
+}
+
+bool operator!=(const attributes &a0, const attributes &a1) {
+	return a0.weak != a1.weak or a0.pass != a1.pass or a0.delay_max != a1.delay_max or a0.assume != a1.assume;
 }
 
 device::device() {
@@ -35,16 +50,14 @@ device::device() {
 	drain = -1;
 	threshold = 1;
 	driver = 0;
-	assume = 1;
 }
 
-device::device(int source, int gate, int drain, int threshold, int driver, boolean::cover assume, attributes attr) {
+device::device(int source, int gate, int drain, int threshold, int driver, attributes attr) {
 	this->source = source;
 	this->gate = gate;
 	this->drain = drain;
 	this->threshold = threshold;
 	this->driver = driver;
-	this->assume = assume;
 	this->attr = attr;
 }
 
@@ -90,7 +103,7 @@ void production_rule_set::print(const ucs::variable_set &v) {
 
 	cout << "devs " << devs.size() << endl;
 	for (int i = 0; i < (int)devs.size(); i++) {
-		cout << "dev " << i << ": source=" << export_variable_name(devs[i].source, v).to_string() << "(" << devs[i].source << ") gate=" << export_variable_name(devs[i].gate, v).to_string() << "(" << devs[i].gate << ") drain=" << export_variable_name(devs[i].drain, v).to_string() << "(" << devs[i].drain << ") threshold=" << devs[i].threshold << " driver=" << devs[i].driver << (not devs[i].assume.is_tautology() ? " {" + export_expression(devs[i].assume, v).to_string() + "}" : "") << (devs[i].attr.weak ? " weak" : "") << (devs[i].attr.pass ? " pass" : "") << endl;
+		cout << "dev " << i << ": source=" << export_variable_name(devs[i].source, v).to_string() << "(" << devs[i].source << ") gate=" << export_variable_name(devs[i].gate, v).to_string() << "(" << devs[i].gate << ") drain=" << export_variable_name(devs[i].drain, v).to_string() << "(" << devs[i].drain << ") threshold=" << devs[i].threshold << " driver=" << devs[i].driver << (not devs[i].attr.assume.is_tautology() ? " {" + export_expression(devs[i].attr.assume, v).to_string() + "}" : "") << (devs[i].attr.weak ? " weak" : "") << (devs[i].attr.pass ? " pass" : "") << endl;
 	}
 }
 
@@ -166,38 +179,49 @@ net &production_rule_set::create(int index, bool keep) {
 	return nodes[index];
 }
 
-int production_rule_set::sources(int net, int value, int weak, int pass, boolean::cover assume) const {
+int production_rule_set::sources(int net, int value) const {
 	int result = 0;
 	for (auto i = at(net).sourceOf[value].begin(); i != at(net).sourceOf[value].end(); i++) {
-		if (devs[*i].source == net and (weak < 0 or (weak == 0 and not devs[*i].attr.weak) or (weak == 1 and devs[*i].attr.weak)) and (pass < 0 or (pass == 0 and not devs[*i].attr.pass) or (pass == 1 and devs[*i].attr.pass)) and (assume.is_null() or devs[*i].assume == assume)) {
-			result++;
-		}
+		result += (devs[*i].source == net);
 	}
 	return result;
 }
 
-int production_rule_set::drains(int net, int value, int weak, int pass, boolean::cover assume) const {
+int production_rule_set::drains(int net, int value) const {
 	int result = 0;
 	for (auto i = at(net).drainOf[value].begin(); i != at(net).drainOf[value].end(); i++) {
-		if (devs[*i].drain == net and (weak < 0 or (weak == 0 and not devs[*i].attr.weak) or (weak == 1 and devs[*i].attr.weak)) and (pass < 0 or (pass == 0 and not devs[*i].attr.pass) or (pass == 1 and devs[*i].attr.pass)) and (assume.is_null() or devs[*i].assume == assume)) {
-			result++;
-		}
+		result += (devs[*i].drain == net);
 	}
 	return result;
 }
 
-vector<boolean::cover> production_rule_set::drain_groups(int net, int value, int weak, int pass) const {
-	vector<boolean::cover> result;
+
+int production_rule_set::sources(int net, int value, attributes attr) const {
+	int result = 0;
+	for (auto i = at(net).sourceOf[value].begin(); i != at(net).sourceOf[value].end(); i++) {
+		result += (devs[*i].source == net and devs[*i].attr == attr);
+	}
+	return result;
+}
+
+int production_rule_set::drains(int net, int value, attributes attr) const {
+	int result = 0;
+	for (auto i = at(net).drainOf[value].begin(); i != at(net).drainOf[value].end(); i++) {
+		result += (devs[*i].drain == net and devs[*i].attr == attr);
+	}
+	return result;
+}
+
+vector<attributes> production_rule_set::attribute_groups(int net, int value) const {
+	vector<attributes> result;
 	for (auto i = at(net).drainOf[value].begin(); i != at(net).drainOf[value].end(); i++) {
 		auto dev = devs.begin()+*i;
-		if (dev->drain == net and (weak < 0 or (weak == 0 and not dev->attr.weak) or (weak == 1 and dev->attr.weak)) and (pass < 0 or (pass == 0 and not dev->attr.pass) or (pass == 1 and dev->attr.pass))) {
-			bool found = false;
-			for (auto j = result.begin(); j != result.end() and not found; j++) {
-				found = *j == dev->assume;
-			}
-			if (not found) {
-				result.push_back(dev->assume);
-			} 
+		bool found = false;
+		for (auto j = result.begin(); j != result.end() and not found; j++) {
+			found = *j == dev->attr;
+		}
+		if (not found) {
+			result.push_back(dev->attr);
 		}
 	}
 	return result;
@@ -430,7 +454,7 @@ void production_rule_set::replace(map<int, int> &lst, int from, int to) {
 	}
 }
 
-int production_rule_set::add_source(int gate, int drain, int threshold, int driver, boolean::cover assume, attributes attr) {
+int production_rule_set::add_source(int gate, int drain, int threshold, int driver, attributes attr) {
 	if (gate >= 0 and gate >= (int)nets.size()) {
 		nets.resize(gate+1);
 	} else if (gate < 0 and flip(gate) >= (int)nodes.size()) {
@@ -457,11 +481,11 @@ int production_rule_set::add_source(int gate, int drain, int threshold, int driv
 			at(*i).rsourceOf[driver].push_back(devs.size());
 		}
 	}
-	devs.push_back(device(source, gate, drain, threshold, driver, assume, attr));
+	devs.push_back(device(source, gate, drain, threshold, driver, attr));
 	return source;
 }
 
-int production_rule_set::add_drain(int source, int gate, int threshold, int driver, boolean::cover assume, attributes attr) {
+int production_rule_set::add_drain(int source, int gate, int threshold, int driver, attributes attr) {
 	if (gate >= 0 and gate >= (int)nets.size()) {
 		nets.resize(gate+1);
 	} else if (gate < 0 and flip(gate) >= (int)nodes.size()) {
@@ -486,57 +510,64 @@ int production_rule_set::add_drain(int source, int gate, int threshold, int driv
 			at(*i).rsourceOf[driver].push_back(devs.size());
 		}
 	}
-	devs.push_back(device(source, gate, drain, threshold, driver, assume, attr));
+	devs.push_back(device(source, gate, drain, threshold, driver, attr));
 	return drain;
 }
 
-int production_rule_set::add(boolean::cube guard, int drain, int driver, boolean::cover assume, attributes attr, vector<int> order) {
+int production_rule_set::add(boolean::cube guard, int drain, int driver, attributes attr, vector<int> order) {
 	for (int i = 0; i < (int)order.size() and not guard.is_tautology(); i++) {
 		int threshold = guard.get(order[i]);
 		if (threshold != 2) {
-			drain = add_source(order[i], drain, threshold, driver, assume, attr);
+			drain = add_source(order[i], drain, threshold, driver, attr);
 			guard.hide(order[i]);
+			attr.set_internal();
 		}
 	}
 
 	for (int i = 0; i < (int)nets.size() and not guard.is_tautology(); i++) {
 		int threshold = guard.get(i);
 		if (threshold != 2) {
-			drain = add_source(i, drain, threshold, driver, assume, attr);
+			drain = add_source(i, drain, threshold, driver, attr);
 			guard.hide(i);
+			attr.set_internal();
 		}
 	}
 	return drain;
 }
 
-int production_rule_set::add_hfactor(boolean::cover guard, int drain, int driver, boolean::cover assume, attributes attr, vector<int> order) {
+int production_rule_set::add_hfactor(boolean::cover guard, int drain, int driver, attributes attr, vector<int> order) {
 	if (guard.cubes.size() == 1) {
-		return add(guard.cubes[0], drain, driver, assume, attr, order);
+		return add(guard.cubes[0], drain, driver, attr, order);
 	}
 
 	boolean::cube common = guard.supercube();
 	if (not common.is_tautology()) {
 		guard.cofactor(common);
-		drain = add(common, drain, driver, assume, attr, order);
+		drain = add(common, drain, driver, attr, order);
+		attr.set_internal();
 	}
 
 	if (not guard.is_tautology()) {
 		boolean::cover left, right;
 		guard.partition(left, right);
-		int drainLeft = add_hfactor(left, drain, driver, assume, attr, order);
-		drain = add_hfactor(right, drain, driver, assume, attr, order);
+		int drainLeft = add_hfactor(left, drain, driver, attr, order);
+		drain = add_hfactor(right, drain, driver, attr, order);
 		drain = connect(drainLeft, drain);
 	}
 
 	return drain;
 }
 
-void production_rule_set::add(int source, boolean::cover guard, boolean::cover action, boolean::cover assume, attributes attr, vector<int> order) {
+void production_rule_set::add(int source, boolean::cover guard, int var, int val, attributes attr, vector<int> order) {
+	connect(add_hfactor(guard, var, val, attr, order), source);
+}
+
+void production_rule_set::add(int source, boolean::cover guard, boolean::cover action, attributes attr, vector<int> order) {
 	for (auto c = action.cubes.begin(); c != action.cubes.end(); c++) {
 		for (int i = 0; i < (int)nets.size(); i++) {
 			int driver = c->get(i);
 			if (driver != 2) {
-				connect(add_hfactor(guard, i, driver, assume, attr, order), source);
+				add(source, guard, i, driver, attr, order);
 			}
 		}
 	}
@@ -733,20 +764,22 @@ void production_rule_set::add_keepers(bool share, boolean::cover keep) {
 		boolean::cover keep_up = guard_of(net, 1, true);
 		boolean::cover keep_dn = guard_of(net, 0, true);
 
-		cout << "checking keepers for" << endl;
-		cout << "up: " << up << endl;
-		cout << "dn: " << dn << endl;
-		cout << "keep_up: " << keep_up << endl;
-		cout << "keep_dn: " << keep_dn << endl;
-		cout << "keep: " << keep << endl;
-		cout << "covered: " << (up|dn|keep_up|keep_dn) << endl;
+		if (debug) {
+			cout << "checking keepers for" << endl;
+			cout << "up: " << up << endl;
+			cout << "dn: " << dn << endl;
+			cout << "keep_up: " << keep_up << endl;
+			cout << "keep_dn: " << keep_dn << endl;
+			cout << "keep: " << keep << endl;
+			cout << "covered: " << (up|dn|keep_up|keep_dn) << endl;
+		}
 
 		at(net).keep = false;
 		if (at(net).driver >= 0 or keep.is_subset_of(up|dn|keep_up|keep_dn)) {
-			cout << "not needed" << endl << endl;
+			if (debug) cout << "not needed" << endl << endl;
 			continue;
 		}
-		cout << "making keeper" << endl << endl;
+		if (debug) cout << "making keeper" << endl << endl;
 
 		// identify output inverter if it exists, create it if it doesn't
 		// (using the half cycle timing assumption)
@@ -754,16 +787,18 @@ void production_rule_set::add_keepers(bool share, boolean::cover keep) {
 		if (not has_inverter(net, _net)) {
 			_net = flip(nodes.size());
 			create(_net);
-			connect(add_source(net, _net, 1, 0), pwr[0][0]);
-			connect(add_source(net, _net, 0, 1), pwr[0][1]);
+			attributes attr;
+			attr.delay_max = 0;
+			connect(add_source(net, _net, 1, 0, attr), pwr[0][0]);
+			connect(add_source(net, _net, 0, 1, attr), pwr[0][1]);
 		}
 
 		array<int, 2> weakpwr;
 		weakpwr[0] = sharedweakpwr[0];
 		weakpwr[1] = sharedweakpwr[1];
 		if (not share or not hasweakpwr) {
-			weakpwr[0] = add_drain(pwr[0][0], pwr[0][1], 1, 0, 1, attributes(true, false));
-			weakpwr[1] = add_drain(pwr[0][1], pwr[0][0], 0, 1, 1, attributes(true, false));
+			weakpwr[0] = add_drain(pwr[0][0], pwr[0][1], 1, 0, attributes(true, false));
+			weakpwr[1] = add_drain(pwr[0][1], pwr[0][0], 0, 1, attributes(true, false));
 			sharedweakpwr = weakpwr;
 			hasweakpwr = true;
 		}
