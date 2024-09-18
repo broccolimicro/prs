@@ -195,7 +195,6 @@ int production_rule_set::drains(int net, int value) const {
 	return result;
 }
 
-
 int production_rule_set::sources(int net, int value, attributes attr) const {
 	int result = 0;
 	for (auto i = at(net).sourceOf[value].begin(); i != at(net).sourceOf[value].end(); i++) {
@@ -208,6 +207,22 @@ int production_rule_set::drains(int net, int value, attributes attr) const {
 	int result = 0;
 	for (auto i = at(net).drainOf[value].begin(); i != at(net).drainOf[value].end(); i++) {
 		result += (devs[*i].drain == net and devs[*i].attr == attr);
+	}
+	return result;
+}
+
+int production_rule_set::sources(int net, int value, bool weak) const {
+	int result = 0;
+	for (auto i = at(net).sourceOf[value].begin(); i != at(net).sourceOf[value].end(); i++) {
+		result += (devs[*i].source == net and devs[*i].attr.weak == weak);
+	}
+	return result;
+}
+
+int production_rule_set::drains(int net, int value, bool weak) const {
+	int result = 0;
+	for (auto i = at(net).drainOf[value].begin(); i != at(net).drainOf[value].end(); i++) {
+		result += (devs[*i].drain == net and devs[*i].attr.weak == weak);
 	}
 	return result;
 }
@@ -686,7 +701,7 @@ boolean::cover production_rule_set::guard_of(int net, int driver, bool weak) {
 		if ((curr.net != net
 			and (not at(curr.net).gateOf[0].empty()
 				or not at(curr.net).gateOf[1].empty()))
-			or drains(curr.net, driver, weak?1:0) == 0) {
+			or at(curr.net).driver >= 0) {
 			if (curr.net == net) {
 				continue;
 			}
@@ -747,7 +762,7 @@ bool production_rule_set::has_inverter(int net, int &_net) {
 	return false;
 }
 
-void production_rule_set::add_keepers(bool share, boolean::cover keep) {
+void production_rule_set::add_keepers(bool share, bool hcta, boolean::cover keep) {
 	bool hasweakpwr = false;
 	array<int, 2> sharedweakpwr={
 		std::numeric_limits<int>::max(),
@@ -788,7 +803,49 @@ void production_rule_set::add_keepers(bool share, boolean::cover keep) {
 			_net = flip(nodes.size());
 			create(_net);
 			attributes attr;
-			attr.delay_max = 0;
+			if (hcta) {
+				attr.delay_max = 0;
+			}
+			if (not hcta) {
+				int __net = flip(nodes.size());
+				create(__net);
+				at(__net).remote = at(net).remote;
+				at(net).remote.clear();
+				at(net).remote.push_back(net);
+				for (int i = 0; i < 2; i++) {
+					at(__net).gateOf[i] = at(net).gateOf[i];
+					at(__net).sourceOf[i] = at(net).sourceOf[i];
+					at(net).gateOf[i].clear();
+					at(net).sourceOf[i].clear();
+				}
+				for (auto i = at(__net).remote.begin(); i != at(__net).remote.end(); i++) {
+					if (*i == net) {
+						*i = __net;
+					} else {
+						for (auto j = at(*i).remote.begin(); j != at(*i).remote.end(); j++) {
+							if (*j == net) {
+								*j = __net;
+							}
+						}
+						sort(at(*i).remote.begin(), at(*i).remote.end());
+					}
+				}
+				sort(at(__net).remote.begin(), at(__net).remote.end());
+				for (int i = 0; i < 2; i++) {
+					for (auto j = at(__net).gateOf[i].begin(); j != at(__net).gateOf[i].end(); j++) {
+						if (devs[*j].gate == net) {
+							devs[*j].gate = __net;
+						}
+					}
+					for (auto j = at(__net).sourceOf[i].begin(); j != at(__net).sourceOf[i].end(); j++) {
+						if (devs[*j].source == net) {
+							devs[*j].source = __net;
+						}
+					}
+				}
+				connect(add_source(_net, __net, 1, 0, attr), pwr[0][0]);
+				connect(add_source(_net, __net, 0, 1, attr), pwr[0][1]);
+			}
 			connect(add_source(net, _net, 1, 0, attr), pwr[0][0]);
 			connect(add_source(net, _net, 0, 1, attr), pwr[0][1]);
 		}
@@ -805,6 +862,239 @@ void production_rule_set::add_keepers(bool share, boolean::cover keep) {
 
 		connect(add_source(_net, net, 1, 0), weakpwr[0]);
 		connect(add_source(_net, net, 0, 1), weakpwr[1]);
+	}
+}
+
+vector<bool> production_rule_set::identify_weak_drivers() {
+	// Depth first search from weak devices from source to drains, this allows us
+	// to propagate weak driver information down the stack so we don't oversize
+	// our weak drivers.
+
+	// There are two separate questions that I need to answer.
+	// Is the drain of this device always driven by a weak driver?
+	// 	- In this case, this devices and all of its sources should be sized as a weak driver.
+	// Is this net ever driven by a weak driver?
+	//  - In this case, what devices are driving it during that time? what
+	//    devices overpower it? what is their drive strength? and therefore the
+	//    weak driver should be sized to at most 1/10th of that.
+	// boolean::cover strong = guard_of(curr.net, curr.val, false) | guard_of(curr.net, 1-curr.val, false);
+	// curr.guard = curr.guard & ~strong;
+
+
+	// This function implements part 1.
+
+	struct frame {
+		int net;
+		int val;
+	};
+
+	vector<bool> weak;
+	weak.resize(devs.size(), false);
+
+	vector<frame> frames;
+	for (int i = 0; i < (int)devs.size(); i++) {
+		if (devs[i].attr.weak) {
+			frames.push_back({devs[i].drain, devs[i].driver});
+			weak[i] = true;
+		}
+	}
+
+	while (not frames.empty()) {
+		auto curr = frames.back();
+		frames.pop_back();
+
+		// Propagate only if all sources of this net for this value are weak
+		bool found = false;
+		for (auto i = at(curr.net).drainOf[curr.val].begin(); i != at(curr.net).drainOf[curr.val].end() and not found; i++) {
+			found = not weak[*i];
+		}
+		if (found) {
+			continue;
+		}
+
+		for (auto i = at(curr.net).sourceOf[curr.val].begin(); i != at(curr.net).sourceOf[curr.val].end(); i++) {
+			if (not weak[*i]) {
+				weak[*i] = true;
+				frames.push_back({devs[*i].drain, curr.val});
+			}
+		}
+	}
+
+	return weak;
+}
+
+vector<vector<int> > production_rule_set::size_with_stack_length() {
+	struct frame {
+		int net;
+		int val;
+		vector<int> devs;
+	};
+	vector<frame> frames;
+	for (int i = -(int)nodes.size(); i < (int)nets.size(); i++) {
+		for (int val = 0; val < 2; val++) {
+			if (not at(i).drainOf[1-val].empty() and not at(i).drainOf[val].empty()) {
+				frames.push_back({i, val, vector<int>()});
+			}
+		}
+	}
+
+	// I need to know for each node, all of the boolean cubes that could drive
+	// that node up or down, the strength to which it is driven up or down, and
+	// the devices that participate (for weak drivers).
+
+	vector<vector<int> > device_tree;	
+	while (not frames.empty()) {
+		frame curr = frames.back();
+		frames.pop_back();
+
+		if (at(curr.net).drainOf[curr.val].empty()) {
+			// TODO(edward.bingham) throw error if this node is not a driver (outside
+			// node feeding into pass transistor logic is not acceptable). Assume
+			// driving stack is four transistors long plus length of current stack,
+			// size accordingly.
+			// TODO(edward.bingham) look for sequential devices whose size is less
+			// than both it's neighbors. Size up to minimum. This avoids notches in
+			// cell layout.
+			if (not curr.devs.empty()) {
+				device_tree.push_back(curr.devs);
+			}
+			int stack_size = (float)curr.devs.size();
+			for (auto i = curr.devs.begin(); i != curr.devs.end(); i++) {
+				int device_to_source = (curr.devs.end()-i);
+				// TODO(edward.bingham) nmos and pmos have different drive strengths
+				devs[*i].attr.size = max(devs[*i].attr.size, (float)stack_size);
+			}
+			continue;
+		}
+
+		for (auto i = at(curr.net).drainOf[curr.val].begin(); i != at(curr.net).drainOf[curr.val].end(); i++) {
+			bool found = false;
+			for (int j = (int)curr.devs.size()-1; j >= 0 and not found; j--) {
+				found = curr.devs[j] == *i;
+			}
+			if (not found) {
+				frame next = curr;
+				next.devs.push_back(*i);
+				next.net = devs[*i].source;
+				frames.push_back(next);
+			}
+		}
+	}
+
+	return device_tree;
+}
+
+void production_rule_set::size_devices(float ratio) {
+	// TODO(edward.bingham) The general case sizing problem is really quite
+	// challenging. We can take the transistor network, break it up into mutually
+	// exclusive conditions, then for each of those conditions, we can treat the
+	// driving network as a resistor network with multiple unknowns. We want the
+	// final drive strength of that network to be equal to one. This gives us a
+	// constraint to solve. However, since we have multiple of these conditions
+	// and networks, we want them all to have at least a drive strength of 1
+	// while minimizing area. This creates a many-variable multi-constraint
+	// search space. At least the search space is continuous... This is a great
+	// problem to use some machine learning techniques on.
+	
+	// Thankfully, Quasi-delay insensitive circuits come to the rescue. All data
+	// must be represented by a delay insensitive encoding. Most of the time,
+	// that delay insensitive encoding is a 1-hot encoding, which means that most
+	// of the time, the driving conditions for a given gate are going to be
+	// mutually exclusive. This means that we can get pretty close to an optimum
+	// solution by simply examining each condition independently and taking the
+	// max required sizing across all conditions. That might be a good starting
+	// point for the subsequent optimization engine.
+
+	// For now, just to the simple thing.
+ 
+	// Depth first search from the drains to the source to determine stack
+	// length. This allows us to compute device-level sizing
+
+	vector<vector<int> > device_tree = size_with_stack_length();
+
+	// normalize weak drivers so that they are all min width and length (setting size to 1.0).
+	vector<bool> weak = identify_weak_drivers();
+	for (int i = 0; i < (int)weak.size(); i++) {
+		if (weak[i]) {
+			devs[i].attr.size = 1.0;
+		}
+	}
+
+	// TODO(edward.bingham) From here, sizing gets weird. In the general case, we
+	// can take the transistor network, break it up into mutually exclusive
+	// conditions, then for each of those conditions, we can treat the driving
+	// network as a resistor network with multiple unknowns. We know that the
+	// drive strength of that network must be 10x less than the drive strength of
+	// the opposing strong driver. This means that we'll have a polynomial
+	// inequality. On one side we'll have the polynomial representing the
+	// resistance computation and on the other, we'll have the constraint imposed
+	// by the weak driver requirements. Really, we want a solution on the
+	// boundary of that inequality, but we don't just want any solution. We want
+	// a solution that minimizes circuit area and energy expenditure. That means
+	// that we have to do gradient descent along the boundary of that
+	// multidimensional surface to identify the optimum sizing for the superweak
+	// transistors.
+
+	// Since all of these superweak transistors are min width, then it's really
+	// just a question of length, which roughly speaking is equal to 1/size for
+	// each device since 0 < size < 1. So we would sum that across all unknowns
+	// involved.
+
+	// Energy is dependent on two things. First, the delay between the transition
+	// on the conflicting net and the disabling of a given weak stack. Second,
+	// the total resistance of the weak drive stack and the conflicting strong
+	// driver. Total energy is then just the sum of the individual energies.
+
+	// Since this is a 2-variable optimization, there is likely to be a nonlinear
+	// pareto boundary of "optimum" solutions that favor one or the other metric.
+	// This means that the user will have to tell us how to select a given sizing
+	// solution from that pareto boundary.
+
+	// Now for the vast majority of applications, this will be total overkill.
+	// Most weak drivers are a single transistor and most nodes are only driven
+	// by a single weak driver. However, in the case of pass transistor logic and
+	// other oddities (perhaps adiabatic logic), this starts to become a larger
+	// issue. This means that for computation time sake, we'd probably want to
+	// let the user select between different algorithms with optimization levels.
+	// For example a low optimization level would use the simple algorithm and a
+	// high optimization level would use the more general case algorithm.
+
+	// For now, just do the simple thing.
+
+	vector<bool> superweak;
+	superweak.resize(devs.size(), false);
+	for (auto i = device_tree.begin(); i != device_tree.end(); i++) {
+		for (auto j = i->rbegin(); j != i->rend(); j++) {
+			if (weak[*j]) {
+				superweak[*j] = true;
+				break;
+			}
+		}
+	}
+	
+	for (auto i = device_tree.begin(); i != device_tree.end(); i++) {
+		int idx = 0;
+		for (; idx < (int)i->size() and not superweak[(*i)[idx]]; idx++);
+		if (idx >= (int)i->size()) {
+			continue;
+		}
+
+		/*boolean::cube weak_driver;
+		for (auto j = i->begin(); j != i->end(); j++) {
+			weak_driver.set(devs[*j].gate, devs[*j].threshold);
+		}
+
+		float drive_strength = get_condition_strength(weak_driver, devs[i->back()].drain, 1-devs[i->back()].driver, false);
+		drive_strength *= ratio;
+
+		float weak_strength = 0.0;*/
+		
+		// TODO(edward.bingham) this assumes that the conflicting transitions are
+		// sized to at least 1.0 strength. A more complete approach would instead
+		// try to compute the conflicting transition's strength compared to the
+		// weak driver's strength and assign a size based on that.
+		auto dev = devs.begin()+(*i)[idx];
+		dev->attr.size = ratio;//min(dev->size, drive_strength
 	}
 }
 

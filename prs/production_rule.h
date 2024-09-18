@@ -102,6 +102,8 @@ struct production_rule_set
 	int drains(int net, int value) const;
 	int sources(int net, int value, attributes attr) const;
 	int drains(int net, int value, attributes attr) const;
+	int sources(int net, int value, bool weak) const;
+	int drains(int net, int value, bool weak) const;
 	vector<attributes> attribute_groups(int net, int value) const;
 
 	void set_power(int vdd, int gnd);
@@ -125,7 +127,11 @@ struct production_rule_set
 	boolean::cover guard_of(int net, int driver, bool weak=false);
 
 	bool has_inverter(int net, int &_net);
-	void add_keepers(bool share=true, boolean::cover keep=1);
+	void add_keepers(bool share=true, bool hcta=false, boolean::cover keep=1);
+	vector<bool> identify_weak_drivers();
+
+	vector<vector<int> > size_with_stack_length();
+	void size_devices(float ratio=0.1);
 };
 
 }
