@@ -67,12 +67,14 @@ simulator::simulator()
 {
 	base = NULL;
 	variables = NULL;
+	weak_backflow = true;
 }
 
 simulator::simulator(const production_rule_set *base, const ucs::variable_set *variables)
 {
 	this->base = base;
 	this->variables = variables;
+	this->weak_backflow = true;
 	if (variables != NULL) {
 		for (int i = 0; i < (int)base->nets.size(); i++) {
 			if (base->nets[i].driver == 1) {
@@ -200,7 +202,15 @@ void simulator::model(int i, bool reverse, boolean::cube &assume, boolean::cube 
 
 	int source_value = observed.get(source_uid)+1;
 	int source_strength = 2-strength.get(source_uid);
-	if (dev->attr.weak and source_strength > 1) {
+	if (source_value-1 == 1-dev->driver) {
+		if (not weak_backflow) {
+			source_strength = 0;
+		} else if (source_strength > 1) {
+			source_strength = 1;
+		}
+	} else if (dev->attr.force and source_strength > 2) {
+		source_strength = 3;
+	} else if (dev->attr.weak and source_strength > 1) {
 		source_strength = 1;
 	} else if (source_strength > 2) {
 		source_strength = 2;

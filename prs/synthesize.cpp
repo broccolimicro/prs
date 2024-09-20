@@ -10,7 +10,7 @@ sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs,
 	result.name = "top";
 	for (int i = 0; i < (int)prs.nets.size(); i++) {
 		// TODO(edward.bingham) we gotta figure out IO
-		result.nets.push_back(sch::Net(export_variable_name(i, v).to_string(), false));
+		result.nets.push_back(sch::Net(export_variable_name(i, v).to_string(), prs.nets[i].driver >= 0));
 	}
 
 	for (int i = -1; i >= -(int)prs.nodes.size(); i--) {
@@ -37,7 +37,6 @@ sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs,
 		int type = tech.models[model].type;
 		int minWidth = tech.paint[tech.models[model].paint[0].draw].minWidth*3;
 
-		cout << "adding model " << model << " of type " << type << " with name " << tech.models[model].name << endl;
 		result.mos.push_back(sch::Mos(model, type));
 		result.mos.back().gate = prs.uid(dev->gate);
 		result.mos.back().ports.push_back(prs.uid(dev->source));

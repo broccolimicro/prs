@@ -18,6 +18,7 @@ struct attributes {
 	~attributes();
 
 	bool weak;
+	bool force;
 	bool pass;
 	
 	uint64_t delay_max;
@@ -28,6 +29,8 @@ struct attributes {
 	string variant;
 
 	void set_internal();
+
+	static attributes instant();
 };
 
 bool operator==(const attributes &a0, const attributes &a1);
@@ -126,7 +129,10 @@ struct production_rule_set
 
 	boolean::cover guard_of(int net, int driver, bool weak=false);
 
-	bool has_inverter(int net, int &_net);
+	bool has_inverter_after(int net, int &_net);
+	void add_inverter_between(int net, int _net, attributes attr=attributes(), int vdd=std::numeric_limits<int>::max(), int gnd=std::numeric_limits<int>::max());
+	int add_inverter_after(int net, attributes attr=attributes(), int vdd=std::numeric_limits<int>::max(), int gnd=std::numeric_limits<int>::max());
+	array<int, 2> add_buffer_before(int net, attributes attr=attributes(), int vdd=std::numeric_limits<int>::max(), int gnd=std::numeric_limits<int>::max());
 	void add_keepers(bool share=true, bool hcta=false, boolean::cover keep=1);
 	vector<bool> identify_weak_drivers();
 

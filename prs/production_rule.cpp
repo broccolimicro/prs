@@ -12,6 +12,7 @@ const bool debug = false;
 
 attributes::attributes() {
 	weak = false;
+	force = false;
 	pass = false;
 	assume = 1;
 	delay_max = 10000; // 10ns
@@ -21,6 +22,7 @@ attributes::attributes() {
 
 attributes::attributes(bool weak, bool pass, boolean::cube assume, uint64_t delay_max) {
 	this->weak = weak;
+	this->force = false;
 	this->pass = pass;
 	this->assume = assume;
 	this->delay_max = delay_max;
@@ -36,12 +38,16 @@ void attributes::set_internal() {
 	delay_max = 0;
 }
 
+attributes attributes::instant() {
+	return attributes(false, false, 1, 0);
+}
+
 bool operator==(const attributes &a0, const attributes &a1) {
-	return a0.weak == a1.weak and a0.pass == a1.pass and a0.delay_max == a1.delay_max and a0.assume == a1.assume;
+	return a0.weak == a1.weak and a0.force == a1.force and a0.pass == a1.pass and a0.delay_max == a1.delay_max and a0.assume == a1.assume;
 }
 
 bool operator!=(const attributes &a0, const attributes &a1) {
-	return a0.weak != a1.weak or a0.pass != a1.pass or a0.delay_max != a1.delay_max or a0.assume != a1.assume;
+	return a0.weak != a1.weak or a0.force != a1.force or a0.pass != a1.pass or a0.delay_max != a1.delay_max or a0.assume != a1.assume;
 }
 
 device::device() {
@@ -728,7 +734,7 @@ boolean::cover production_rule_set::guard_of(int net, int driver, bool weak) {
 	return result;
 }
 
-bool production_rule_set::has_inverter(int net, int &_net) {
+bool production_rule_set::has_inverter_after(int net, int &_net) {
 	array<vector<int>, 2> unary;
 	for (int i = 0; i < 2; i++) {
 		for (auto j = at(net).gateOf[i].begin(); j != at(net).gateOf[i].end(); j++) {
@@ -760,6 +766,46 @@ bool production_rule_set::has_inverter(int net, int &_net) {
 	}
 
 	return false;
+}
+
+void production_rule_set::add_inverter_between(int from, int to, attributes attr, int vdd, int gnd) {
+	if (vdd >= (int)nets.size()) {
+		vdd = pwr[0][1];
+	}
+	if (gnd >= (int)nets.size()) {
+		gnd = pwr[0][0];
+	}
+	connect(add_source(from, to, 1, 0, attr), gnd);
+	connect(add_source(from, to, 0, 1, attr), vdd);
+}
+
+int production_rule_set::add_inverter_after(int net, attributes attr, int vdd, int gnd) {
+	int _net = flip(nodes.size());
+	create(_net);
+	add_inverter_between(net, _net, attr, vdd, gnd);
+	return _net;
+}
+
+array<int, 2> production_rule_set::add_buffer_before(int net, attributes attr, int vdd, int gnd) {
+	int __net = flip(nodes.size());
+	create(__net);
+	for (int i = 0; i < 2; i++) {
+		at(__net).drainOf[i] = at(net).drainOf[i];
+		at(net).drainOf[i].clear();
+	}
+	for (int i = 0; i < 2; i++) {
+		for (auto j = at(__net).drainOf[i].begin(); j != at(__net).drainOf[i].end(); j++) {
+			if (devs[*j].drain == net) {
+				devs[*j].drain = __net;
+			}
+		}
+	}
+
+	int _net = flip(nodes.size());
+	create(_net);
+	add_inverter_between(__net, _net, attr, vdd, gnd);
+	add_inverter_between(_net, net, attr, vdd, gnd);
+	return {__net, _net};
 }
 
 void production_rule_set::add_keepers(bool share, bool hcta, boolean::cover keep) {
@@ -799,55 +845,15 @@ void production_rule_set::add_keepers(bool share, bool hcta, boolean::cover keep
 		// identify output inverter if it exists, create it if it doesn't
 		// (using the half cycle timing assumption)
 		int _net=std::numeric_limits<int>::max();
-		if (not has_inverter(net, _net)) {
-			_net = flip(nodes.size());
-			create(_net);
-			attributes attr;
+		int __net=net;
+		if (not has_inverter_after(__net, _net)) {
 			if (hcta) {
-				attr.delay_max = 0;
+				_net = add_inverter_after(__net, attributes::instant());
+			} else {
+				auto n = add_buffer_before(__net);
+				__net = n[0];
+				_net = n[1];
 			}
-			if (not hcta) {
-				int __net = flip(nodes.size());
-				create(__net);
-				at(__net).remote = at(net).remote;
-				at(net).remote.clear();
-				at(net).remote.push_back(net);
-				for (int i = 0; i < 2; i++) {
-					at(__net).gateOf[i] = at(net).gateOf[i];
-					at(__net).sourceOf[i] = at(net).sourceOf[i];
-					at(net).gateOf[i].clear();
-					at(net).sourceOf[i].clear();
-				}
-				for (auto i = at(__net).remote.begin(); i != at(__net).remote.end(); i++) {
-					if (*i == net) {
-						*i = __net;
-					} else {
-						for (auto j = at(*i).remote.begin(); j != at(*i).remote.end(); j++) {
-							if (*j == net) {
-								*j = __net;
-							}
-						}
-						sort(at(*i).remote.begin(), at(*i).remote.end());
-					}
-				}
-				sort(at(__net).remote.begin(), at(__net).remote.end());
-				for (int i = 0; i < 2; i++) {
-					for (auto j = at(__net).gateOf[i].begin(); j != at(__net).gateOf[i].end(); j++) {
-						if (devs[*j].gate == net) {
-							devs[*j].gate = __net;
-						}
-					}
-					for (auto j = at(__net).sourceOf[i].begin(); j != at(__net).sourceOf[i].end(); j++) {
-						if (devs[*j].source == net) {
-							devs[*j].source = __net;
-						}
-					}
-				}
-				connect(add_source(_net, __net, 1, 0, attr), pwr[0][0]);
-				connect(add_source(_net, __net, 0, 1, attr), pwr[0][1]);
-			}
-			connect(add_source(net, _net, 1, 0, attr), pwr[0][0]);
-			connect(add_source(net, _net, 0, 1, attr), pwr[0][1]);
 		}
 
 		array<int, 2> weakpwr;
@@ -860,8 +866,7 @@ void production_rule_set::add_keepers(bool share, bool hcta, boolean::cover keep
 			hasweakpwr = true;
 		}
 
-		connect(add_source(_net, net, 1, 0), weakpwr[0]);
-		connect(add_source(_net, net, 0, 1), weakpwr[1]);
+		add_inverter_between(_net, __net, attributes(), weakpwr[1], weakpwr[0]);
 	}
 }
 
