@@ -91,6 +91,17 @@ struct production_rule_set
 	vector<net> nets;
 	vector<net> nodes;
 
+	// settings that control behavior
+	bool assume_nobackflow; // (default false) nmos no longer drives weak 1 and pmos no longer drives weak 0
+	bool assume_static;     // (default false) hold value at all named nodes
+
+	// settings that control validation
+	// all default to false
+	bool require_driven;         // floating nodes not allowed if true
+	bool require_stable;         // glitches not allowed if true
+	bool require_noninterfering; // Vdd to GND shorts not allowed if true
+	bool require_adiabatic;      // non-adiabatic transitions not allowed if true
+
 	void print(const ucs::variable_set &v);
 	void init(const ucs::variable_set &v);
 

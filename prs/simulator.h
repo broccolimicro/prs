@@ -63,8 +63,6 @@ struct simulator {
 	vector<queue::event*> nets;
 	vector<queue::event*> nodes;
 
-	bool weak_backflow;
-
 	queue::event* &at(int net);
 
 	void schedule(uint64_t delay_max, boolean::cube assume, boolean::cube guard, int net, int value, int strength, bool stable=true);

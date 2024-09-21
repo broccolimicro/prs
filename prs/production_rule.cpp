@@ -87,9 +87,21 @@ void net::add_remote(int uid) {
 }
 
 production_rule_set::production_rule_set() {
+	assume_nobackflow = false;
+	assume_static = false;
+	require_driven = false;
+	require_stable = false;
+	require_noninterfering = false;
+	require_adiabatic = false;
 }
 
 production_rule_set::production_rule_set(const ucs::variable_set &v) {
+	assume_nobackflow = false;
+	assume_static = false;
+	require_driven = false;
+	require_stable = false;
+	require_noninterfering = false;
+	require_adiabatic = false;
 	init(v);
 }
 

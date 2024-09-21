@@ -67,14 +67,12 @@ simulator::simulator()
 {
 	base = NULL;
 	variables = NULL;
-	weak_backflow = true;
 }
 
 simulator::simulator(const production_rule_set *base, const ucs::variable_set *variables)
 {
 	this->base = base;
 	this->variables = variables;
-	this->weak_backflow = true;
 	if (variables != NULL) {
 		for (int i = 0; i < (int)base->nets.size(); i++) {
 			if (base->nets[i].driver == 1) {
@@ -203,8 +201,9 @@ void simulator::model(int i, bool reverse, boolean::cube &assume, boolean::cube 
 	int source_value = observed.get(source_uid)+1;
 	int source_strength = 2-strength.get(source_uid);
 	if (source_value-1 == 1-dev->driver) {
-		if (not weak_backflow) {
+		if (base->assume_nobackflow) {
 			source_strength = 0;
+			source_value = 3;
 		} else if (source_strength > 1) {
 			source_strength = 1;
 		}
@@ -320,7 +319,11 @@ void simulator::evaluate(deque<int> nets) {
 		value -= 1;
 
 		if (value == 2 and drive_strength == 0) {
-			value = -1;
+			if (base->assume_static) {
+				value = encoding.get(uid);
+			} else {
+				value = -1;
+			}
 		}
 
 		if (debug) cout << value << " strength = " << drive_strength << endl;
@@ -390,14 +393,15 @@ void simulator::assume(boolean::cube assume) {
 }
 
 void simulator::set(int net, int value, int strength, bool stable, deque<int> *q) {
-	if (not stable and strength > 0) {
+	if (base->require_stable and not stable and strength > 0) {
 		error("", "unstable rule " + export_variable_name(net, *variables).to_string() + (value == 1 ? "+" : (value == 0 ? "-" : "~")), __FILE__, __LINE__);
-	} else if (value == -1 and strength > 0) {
+	}
+	if (base->require_noninterfering and stable and value == -1 and strength > 0) {
 		error("", "interference " + export_variable_name(net, *variables).to_string(), __FILE__, __LINE__);
 	}
-	/*if (value == 2) {
+	if (base->require_driven and strength == 0 and net >= 0) {
 		error("", "floating node " + export_variable_name(net, *variables).to_string(), __FILE__, __LINE__);
-	}*/
+	}
 
 	if (net > base->flip((int)nodes.size()) and net < (int)nets.size() and at(net) != nullptr) {
 		enabled.pop(at(net));
@@ -416,6 +420,34 @@ void simulator::set(int net, int value, int strength, bool stable, deque<int> *q
 			return;
 		}
 		vacuous = true;
+	}
+
+	if (base->require_adiabatic and not vacuous and (value == 0 or value == 1)) {
+		vector<int> viol;
+		for (auto i = base->at(net).gateOf[value].begin(); i != base->at(net).gateOf[value].end(); i++) {
+			int drain_value = encoding.get(base->uid(base->devs[*i].drain));
+			int source_value = encoding.get(base->uid(base->devs[*i].source));
+			if ((not base->assume_nobackflow or source_value == base->devs[*i].driver)
+				and drain_value != source_value) {
+				//printf("assume_nobackflow %d source_value %d driver %d drain_value %d value %d threshold %d\n", (int)base->assume_nobackflow, source_value, base->devs[*i].driver, drain_value, value, base->devs[*i].threshold);
+				viol.push_back(*i);
+			}
+		}
+		if (not viol.empty()) {
+			error("", "non-adiabatic transition " + export_variable_name(net, *variables).to_string() + (value == 1 ? "+" : (value == 0 ? "-" : "~")), __FILE__, __LINE__);
+			string msg = "{";
+			for (auto i = viol.begin(); i != viol.end(); i++) {
+				if (i != viol.begin()) {
+					msg += ", ";
+				}
+				string source_name = export_variable_name(base->devs[*i].source, *variables).to_string();
+				string gate_name = export_variable_name(net, *variables).to_string();
+				string drain_name = export_variable_name(base->devs[*i].drain, *variables).to_string();
+				msg += "@" + source_name + "&" + (value==0 ? "~" : "") + gate_name + "->" + drain_name + (base->devs[*i].driver==1 ? "+" : "-");
+			}
+			msg += "}";
+			note("", msg, __FILE__, __LINE__);
+		}
 	}
 
 	encoding.set(uid, value);
