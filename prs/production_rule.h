@@ -110,7 +110,7 @@ struct production_rule_set
 	static int flip(int index);
 	net &at(int index);
 	const net &at(int index) const;
-	net &create(int index, bool keep=false);
+	net &create(int index=std::numeric_limits<int>::max(), bool keep=false);
 
 	int sources(int net, int value) const;
 	int drains(int net, int value) const;
@@ -127,6 +127,7 @@ struct production_rule_set
 	void replace(map<int, int> &lst, int from, int to);
 	int add_source(int gate, int drain, int threshold, int driver, attributes attr=attributes());
 	int add_drain(int source, int gate, int threshold, int driver, attributes attr=attributes());
+	void add_mos(int source, int gate, int drain, int threshold, int driver, attributes attr);
 	int add(boolean::cube guard, int drain, int driver, attributes attr=attributes(), vector<int> order=vector<int>());
 	int add_hfactor(boolean::cover guard, int drain, int driver, attributes attr=attributes(), vector<int> order=vector<int>());
 
@@ -144,7 +145,7 @@ struct production_rule_set
 	void add_inverter_between(int net, int _net, attributes attr=attributes(), int vdd=std::numeric_limits<int>::max(), int gnd=std::numeric_limits<int>::max());
 	int add_inverter_after(int net, attributes attr=attributes(), int vdd=std::numeric_limits<int>::max(), int gnd=std::numeric_limits<int>::max());
 	array<int, 2> add_buffer_before(int net, attributes attr=attributes(), int vdd=std::numeric_limits<int>::max(), int gnd=std::numeric_limits<int>::max());
-	void add_keepers(bool share=true, bool hcta=false, boolean::cover keep=1);
+	void add_keepers(ucs::variable_set &v, bool share=true, bool hcta=false, boolean::cover keep=1);
 	vector<bool> identify_weak_drivers();
 
 	vector<vector<int> > size_with_stack_length();

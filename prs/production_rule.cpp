@@ -127,7 +127,7 @@ void production_rule_set::print(const ucs::variable_set &v) {
 
 void production_rule_set::init(const ucs::variable_set &v) {
 	if (nets.size() < v.nodes.size()) {
-		nets.resize(v.nodes.size());
+		create(v.nodes.size()-1);
 	}
 	vector<vector<int> > groups = v.get_groups();
 	for (int i = 0; i < (int)groups.size(); i++) {
@@ -170,6 +170,10 @@ const net &production_rule_set::at(int index) const {
 }
 
 net &production_rule_set::create(int index, bool keep) {
+	if (index == std::numeric_limits<int>::max()) {
+		index = flip(nodes.size());
+	}
+
 	if (index >= 0) {
 		int sz = (int)nets.size();
 		if (index >= sz) {
@@ -488,26 +492,15 @@ void production_rule_set::replace(map<int, int> &lst, int from, int to) {
 }
 
 int production_rule_set::add_source(int gate, int drain, int threshold, int driver, attributes attr) {
-	if (gate >= 0 and gate >= (int)nets.size()) {
-		nets.resize(gate+1);
-	} else if (gate < 0 and flip(gate) >= (int)nodes.size()) {
-		nodes.resize(flip(gate)+1);
-	}
-	if (drain >= 0 and drain >= (int)nets.size()) {
-		nets.resize(drain+1);
-	} else if (drain < 0 and flip(drain) >= (int)nodes.size()) {
-		nodes.resize(flip(drain)+1);
-	}
-
+	create(gate);
+	create(drain);
 	int source = flip(nodes.size());
-	nodes.push_back(net());
-	nodes.back().remote.push_back(source);
-	nodes.back().sourceOf[driver].push_back(devs.size());
+	create(source);
 
+	at(source).sourceOf[driver].push_back(devs.size());
 	for (auto i = at(gate).remote.begin(); i != at(gate).remote.end(); i++) {
 		at(*i).gateOf[threshold].push_back(devs.size());
 	}
-	
 	for (auto i = at(drain).remote.begin(); i != at(drain).remote.end(); i++) {
 		at(*i).drainOf[driver].push_back(devs.size());
 		if (attr.pass) {
@@ -519,21 +512,26 @@ int production_rule_set::add_source(int gate, int drain, int threshold, int driv
 }
 
 int production_rule_set::add_drain(int source, int gate, int threshold, int driver, attributes attr) {
-	if (gate >= 0 and gate >= (int)nets.size()) {
-		nets.resize(gate+1);
-	} else if (gate < 0 and flip(gate) >= (int)nodes.size()) {
-		nodes.resize(flip(gate)+1);
-	}
-	if (source >= 0 and source >= (int)nets.size()) {
-		nets.resize(source+1);
-	} else if (source < 0 and flip(source) >= (int)nodes.size()) {
-		nodes.resize(flip(source)+1);
-	}
-
+	create(gate);
+	create(source);
 	int drain = flip(nodes.size());
-	nodes.push_back(net());
-	nodes.back().remote.push_back(drain);
-	nodes.back().sourceOf[driver].push_back(devs.size());
+	create(drain);
+	at(drain).drainOf[driver].push_back(devs.size());
+	for (auto i = at(gate).remote.begin(); i != at(gate).remote.end(); i++) {
+		at(*i).gateOf[threshold].push_back(devs.size());
+	}
+	for (auto i = at(source).remote.begin(); i != at(source).remote.end(); i++) {
+		at(*i).sourceOf[driver].push_back(devs.size());
+	}
+	devs.push_back(device(source, gate, drain, threshold, driver, attr));
+	return drain;
+}
+
+void production_rule_set::add_mos(int source, int gate, int drain, int threshold, int driver, attributes attr) {
+	create(gate);
+	create(source);
+	create(drain);
+
 	for (auto i = at(gate).remote.begin(); i != at(gate).remote.end(); i++) {
 		at(*i).gateOf[threshold].push_back(devs.size());
 	}
@@ -543,8 +541,11 @@ int production_rule_set::add_drain(int source, int gate, int threshold, int driv
 			at(*i).rsourceOf[driver].push_back(devs.size());
 		}
 	}
+	for (auto i = at(source).remote.begin(); i != at(source).remote.end(); i++) {
+		at(*i).sourceOf[driver].push_back(devs.size());
+	}
+
 	devs.push_back(device(source, gate, drain, threshold, driver, attr));
-	return drain;
 }
 
 int production_rule_set::add(boolean::cube guard, int drain, int driver, attributes attr, vector<int> order) {
@@ -820,7 +821,7 @@ array<int, 2> production_rule_set::add_buffer_before(int net, attributes attr, i
 	return {__net, _net};
 }
 
-void production_rule_set::add_keepers(bool share, bool hcta, boolean::cover keep) {
+void production_rule_set::add_keepers(ucs::variable_set &v, bool share, bool hcta, boolean::cover keep) {
 	bool hasweakpwr = false;
 	array<int, 2> sharedweakpwr={
 		std::numeric_limits<int>::max(),
@@ -872,8 +873,24 @@ void production_rule_set::add_keepers(bool share, bool hcta, boolean::cover keep
 		weakpwr[0] = sharedweakpwr[0];
 		weakpwr[1] = sharedweakpwr[1];
 		if (not share or not hasweakpwr) {
-			weakpwr[0] = add_drain(pwr[0][0], pwr[0][1], 1, 0, attributes(true, false));
-			weakpwr[1] = add_drain(pwr[0][1], pwr[0][0], 0, 1, attributes(true, false));
+			if (share) {
+				// If we're sharing the weak power signals across multiple cells, then
+				// we need to make them named nets so that we can put them in the IO
+				// ports.
+				ucs::variable weakgnd = v.nodes[pwr[0][0]];
+				weakgnd.name.back().name = "weak_" + weakgnd.name.back().name;
+				ucs::variable weakvdd = v.nodes[pwr[0][1]];
+				weakvdd.name.back().name = "weak_" + weakvdd.name.back().name;
+
+				weakpwr[0] = v.define(weakgnd);
+				weakpwr[1] = v.define(weakvdd);
+			} else {
+				weakpwr[0] = flip(nodes.size());
+				weakpwr[1] = flip(nodes.size());
+			}
+
+			add_mos(pwr[0][0], pwr[0][1], weakpwr[0], 1, 0, attributes(true, false));
+			add_mos(pwr[0][1], pwr[0][0], weakpwr[1], 0, 1, attributes(true, false));
 			sharedweakpwr = weakpwr;
 			hasweakpwr = true;
 		}

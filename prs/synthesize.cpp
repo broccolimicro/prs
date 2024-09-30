@@ -5,16 +5,16 @@
 namespace prs {
 
 sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs, const ucs::variable_set &v) {
-	sch::Subckt result(tech);
+	sch::Subckt result;
 
 	result.name = "top";
 	for (int i = 0; i < (int)prs.nets.size(); i++) {
 		// TODO(edward.bingham) we gotta figure out IO
-		result.nets.push_back(sch::Net(export_variable_name(i, v).to_string(), prs.nets[i].driver >= 0));
+		result.pushNet(export_variable_name(i, v).to_string(), prs.nets[i].driver >= 0);
 	}
 
 	for (int i = -1; i >= -(int)prs.nodes.size(); i--) {
-		result.nets.push_back(sch::Net(export_variable_name(i, v).to_string(), false));
+		result.pushNet(export_variable_name(i, v).to_string(), false);
 	}
 
 	int minLength = tech.paint[tech.wires[0].draw].minWidth;
@@ -36,19 +36,16 @@ sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs,
 		}
 		int type = tech.models[model].type;
 		int minWidth = tech.paint[tech.models[model].paint[0].draw].minWidth*3;
-
-		result.mos.push_back(sch::Mos(model, type));
-		result.mos.back().gate = prs.uid(dev->gate);
-		result.mos.back().ports.push_back(prs.uid(dev->source));
-		result.mos.back().ports.push_back(prs.uid(dev->drain));
-		result.mos.back().bulk = prs.pwr[0][1-dev->threshold];
+		vec2i size(1.0,1.0);
 		if (dev->attr.size < 1.0) {
-			result.mos.back().size[0] = (int)ceil(((float)minLength)/dev->attr.size);
-			result.mos.back().size[1] = minWidth;
+			size[0] = (int)ceil(((float)minLength)/dev->attr.size);
+			size[1] = minWidth;
 		} else {
-			result.mos.back().size[0] = minLength;
-			result.mos.back().size[1] = (int)ceil(dev->attr.size*(float)minWidth);
+			size[0] = minLength;
+			size[1] = (int)ceil(dev->attr.size*(float)minWidth);
 		}
+
+		result.pushMos(model, type, prs.uid(dev->drain), prs.uid(dev->gate), prs.uid(dev->source), prs.uid(prs.pwr[0][1-dev->threshold]), size);
 	}
 	return result;
 }

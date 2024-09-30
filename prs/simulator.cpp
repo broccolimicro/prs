@@ -6,7 +6,7 @@
 
 namespace prs {
 
-const bool debug = false;
+const bool debug = true;
 
 enabled_transition::enabled_transition() {
 	this->fire_at = 0;
@@ -118,7 +118,7 @@ void simulator::schedule(uint64_t delay_max, boolean::cube assume, boolean::cube
 	uint64_t fire_at = enabled.now + pareto(delay_max, 5.0);
 	if (at(net) == nullptr) {
 		at(net) = enabled.push(enabled_transition(fire_at, assume, guard, net, value, strength, stable));
-	} else if (at(net)->value.strength == 0 or at(net)->value.value == prev_value) {
+	} else if (at(net)->value.strength == 0 or at(net)->value.value == prev_value or are_mutex(global.xoutnulls(), at(net)->value.assume)) {
 		// it was a vacuous transition, it doesn't go unstable
 		at(net)->value.assume = assume;
 		at(net)->value.guard = guard;
@@ -174,33 +174,42 @@ void simulator::propagate(deque<int> &q, int net, bool vacuous) {
 
 void simulator::model(int i, bool reverse, boolean::cube &assume, boolean::cube &guard, int &value, int &drive_strength, int &glitch_value, int &glitch_strength, uint64_t &delay_max) {
 	auto dev = base->devs.begin()+i;
-	if (are_mutex(global, dev->attr.assume)) {
-		return;
+	bool fail_assumption = are_mutex(global.xoutnulls(), dev->attr.assume);
+	if (debug and fail_assumption) {
+		cout << "\tfailed assumption " << export_composition(global, *variables).to_string() << " & " << export_expression(dev->attr.assume, *variables).to_string() << endl;
 	}
+	boolean::cube observed = encoding;
 	boolean::cube assume_action;
-	for (auto c = dev->attr.assume.cubes.begin(); c != dev->attr.assume.cubes.end(); c++) {
-		if (not are_mutex(encoding, *c)) {
-			assume_action &= *c;
+	if (not fail_assumption) {
+		for (auto c = dev->attr.assume.cubes.begin(); c != dev->attr.assume.cubes.end(); c++) {
+			if (not are_mutex(encoding, *c)) {
+				assume_action &= *c;
+			}
 		}
+		assume_action = assume_action.xoutnulls();
+		observed &= assume_action;
 	}
-	assume_action = assume_action.xoutnulls();
-	boolean::cube observed = encoding & assume_action;
 
 	int source = reverse ? dev->drain : dev->source;
 	int drain = reverse ? dev->source : dev->drain;
-
-	int prev_value = observed.get(base->uid(drain))+1;
-
-	//bool isremote = net != drain;
 	int gate_uid = base->uid(dev->gate);
 	int source_uid = base->uid(source);
+	int drain_uid = base->uid(drain);
+
+	int prev_value = observed.get(drain_uid)+1;
+	int prev_strength = 2-strength.get(drain_uid);
+
+	//bool isremote = net != drain;
 
 	int local_value = observed.get(gate_uid);
 	int global_value = global.get(gate_uid);
 
 	int source_value = observed.get(source_uid)+1;
 	int source_strength = 2-strength.get(source_uid);
-	if (source_value-1 == 1-dev->driver) {
+	if (fail_assumption) {
+		source_strength = prev_strength;
+		source_value = prev_value;
+	} else if (source_value-1 == 1-dev->driver) {
 		if (base->assume_nobackflow) {
 			source_strength = 0;
 			source_value = 3;
@@ -233,7 +242,7 @@ void simulator::model(int i, bool reverse, boolean::cube &assume, boolean::cube 
 				// TODO(edward.bingham) weak instability?
 			}
 			if (debug) cout << "\tstronger " << value << "*" << drive_strength << endl;
-		} else /*if (drive_strength == source_strength)*/ {
+		} else if (not fail_assumption) /*if (drive_strength == source_strength)*/ {
 			value &= source_value;
 			if (dev->attr.delay_max < delay_max) {
 				delay_max = dev->attr.delay_max;
@@ -241,14 +250,14 @@ void simulator::model(int i, bool reverse, boolean::cube &assume, boolean::cube 
 			// TODO(edward.bingham) this might also cause instability
 			if (debug) cout << "\tdriven " << value << "*" << drive_strength << endl;
 		}
-		if (global_value != 2 and global_value != -1) {
+		if (not fail_assumption and global_value != 2 and global_value != -1) {
 			guard.set(gate_uid, global_value);
 			assume &= assume_action;
 		}
 	} /*else if (local_value == 1-dev->threshold) {
 		// this device is disabled, value remains unaffected
 		// TODO(edward.bingham) check instability?
-	}*/ else if ((source_value&prev_value) != prev_value and (local_value == -1 or (local_value == 2 and global_value != dev->threshold))) {
+	}*/ else if (not fail_assumption and (source_value&prev_value) != prev_value and (local_value == -1 or (local_value == 2 and global_value != dev->threshold))) {
 		// instability
 		if (source_strength > glitch_strength) {
 			glitch_value = source_value;
@@ -301,6 +310,7 @@ void simulator::evaluate(deque<int> nets) {
 				model(*i, true, assumed, guard, value, drive_strength, glitch_value, glitch_strength, delay_max);
 			}*/
 		}
+
 		if (delay_max == std::numeric_limits<uint64_t>::max()) {
 			delay_max = 0;
 		}
@@ -329,7 +339,7 @@ void simulator::evaluate(deque<int> nets) {
 		if (debug) cout << value << " strength = " << drive_strength << endl;
 
 		// TODO(edward.bingham) we should only propagate instantly here if delay_max is 0, we need to handle the other condition in the import/export of production rules, not in the simulator
-		if (delay_max == 0 or (base->at(net).gateOf[0].empty() and base->at(net).gateOf[1].empty())) {
+		if ((delay_max == 0 or (base->at(net).gateOf[0].empty() and base->at(net).gateOf[1].empty()))) {
 			if (value >= 0) {
 				ack &= guard & assumed;
 				assume(assumed);
