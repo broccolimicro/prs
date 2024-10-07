@@ -47,6 +47,14 @@ sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs,
 
 		result.pushMos(model, type, prs.uid(dev->drain), prs.uid(dev->gate), prs.uid(dev->source), prs.uid(prs.pwr[0][1-dev->threshold]), size);
 	}
+
+	for (int i = -(int)prs.nodes.size(); i < (int)prs.nets.size(); i++) {
+		for (auto j = prs.at(i).remote.begin(); j != prs.at(i).remote.end(); j++) {
+			if (i != *j) {
+				result.connectRemote(prs.uid(i), prs.uid(*j));
+			}
+		}
+	}
 	return result;
 }
 
