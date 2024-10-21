@@ -35,7 +35,7 @@ sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs,
 			continue;
 		}
 		int type = tech.models[model].type;
-		int minWidth = tech.paint[tech.models[model].paint[0].draw].minWidth*3;
+		int minWidth = tech.paint[tech.subst[flip(tech.models[model].stack[0])].draw].minWidth*3;
 		vec2i size(1.0,1.0);
 		if (dev->attr.size < 1.0) {
 			size[0] = (int)ceil(((float)minLength)/dev->attr.size);
