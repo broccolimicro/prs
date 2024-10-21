@@ -45,7 +45,7 @@ sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs,
 			size[1] = (int)ceil(dev->attr.size*(float)minWidth);
 		}
 
-		result.pushMos(model, type, prs.uid(dev->drain), prs.uid(dev->gate), prs.uid(dev->source), prs.uid(prs.pwr[0][1-dev->threshold]), size);
+		result.pushMos(tech, model, type, prs.uid(dev->drain), prs.uid(dev->gate), prs.uid(dev->source), prs.uid(prs.pwr[0][1-dev->threshold]), size);
 	}
 
 	for (int i = -(int)prs.nodes.size(); i < (int)prs.nets.size(); i++) {
