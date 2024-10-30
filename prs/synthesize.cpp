@@ -10,11 +10,11 @@ sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs,
 	result.name = "top";
 	for (int i = 0; i < (int)prs.nets.size(); i++) {
 		// TODO(edward.bingham) we gotta figure out IO
-		result.pushNet(export_variable_name(i, v).to_string(), prs.nets[i].driver >= 0);
+		result.push(sch::Net(export_variable_name(i, v).to_string(), prs.nets[i].driver >= 0));
 	}
 
 	for (int i = -1; i >= -(int)prs.nodes.size(); i--) {
-		result.pushNet(export_variable_name(i, v).to_string(), false);
+		result.push(sch::Net(export_variable_name(i, v).to_string(), false));
 	}
 
 	int minLength = tech.paint[tech.wires[0].draw].minWidth;
@@ -45,7 +45,7 @@ sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs,
 			size[1] = (int)ceil(dev->attr.size*(float)minWidth);
 		}
 
-		result.pushMos(tech, model, type, prs.uid(dev->drain), prs.uid(dev->gate), prs.uid(dev->source), prs.uid(prs.pwr[0][1-dev->threshold]), size);
+		result.push(sch::Mos(tech, model, type, prs.uid(dev->drain), prs.uid(dev->gate), prs.uid(dev->source), prs.uid(prs.pwr[0][1-dev->threshold]), size));
 	}
 
 	for (int i = -(int)prs.nodes.size(); i < (int)prs.nets.size(); i++) {
