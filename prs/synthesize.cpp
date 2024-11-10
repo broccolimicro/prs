@@ -17,7 +17,7 @@ sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs,
 		result.push(sch::Net(export_variable_name(i, v).to_string(), false));
 	}
 
-	int minLength = tech.paint[tech.wires[0].draw].minWidth;
+	int minLength = tech.getWidth(tech.wires[0].draw);
 
 	for (auto dev = prs.devs.begin(); dev != prs.devs.end(); dev++) {
 		int model = 0;
@@ -35,7 +35,7 @@ sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs,
 			continue;
 		}
 		int type = tech.models[model].type;
-		int minWidth = tech.paint[tech.subst[flip(tech.models[model].stack[0])].draw].minWidth*3;
+		int minWidth = tech.getWidth(tech.subst[flip(tech.models[model].stack[0])].draw)*3;
 		vec2i size(1.0,1.0);
 		if (dev->attr.size < 1.0) {
 			size[0] = (int)ceil(((float)minLength)/dev->attr.size);
