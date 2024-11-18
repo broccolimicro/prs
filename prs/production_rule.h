@@ -71,6 +71,7 @@ struct net {
 
 	vector<int> remote;
 
+	bool isIO;
 	bool keep;
 	int mirror;
 	int driver;
@@ -150,6 +151,9 @@ struct production_rule_set
 
 	vector<vector<int> > size_with_stack_length();
 	void size_devices(float ratio=0.1);
+
+	void swap_source_drain(int dev);
+	void normalize_source_drain();
 };
 
 }

@@ -58,5 +58,103 @@ sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs,
 	return result;
 }
 
+bool isNode(string name) {
+	if (name.empty()) {
+		return true;
+	}
+
+	if (name[0] != '_') {
+		return false;
+	}
+
+	for (int i = 1; i < (int)name.size(); i++) {
+		if (name[i] < '0' or name[i] > '9') {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+production_rule_set extract_rules(ucs::variable_set &v, const phy::Tech &tech, const sch::Subckt &ckt) {
+	production_rule_set result;
+
+	int minLength = tech.getWidth(tech.wires[0].draw);
+
+	int vdd = std::numeric_limits<int>::max();
+	int gnd = std::numeric_limits<int>::max();
+
+	map<int, int> netmap;
+	for (int i = 0; i < (int)ckt.nets.size(); i++) {
+		int uid = flip(result.nodes.size());
+		if (not isNode(ckt.nets[i].name)) {
+			uid = v.define(ckt.nets[i].name);
+		}
+		result.create(uid);
+		if (ckt.nets[i].remoteIO) {
+			result.at(uid).isIO = true;
+		}
+
+		netmap.insert(pair<int, int>(i, uid));
+
+		string lname = lower(ckt.nets[i].name);
+		if (lname.find("weak") == string::npos) {
+			if (lname.find("vdd") != string::npos) {
+				vdd = uid;
+			} else if (lname.find("gnd") != string::npos
+				or lname.find("vss") != string::npos) {
+				gnd = uid;
+			}
+		}
+	}
+	if (vdd == std::numeric_limits<int>::max()) {
+		vdd = v.define(string("Vdd"));
+		result.create(vdd);
+	}
+	if (gnd == std::numeric_limits<int>::max()) {
+		gnd = v.define(string("GND"));
+		result.create(gnd);
+	}
+	result.set_power(vdd, gnd);
+
+	for (auto dev = ckt.mos.begin(); dev != ckt.mos.end(); dev++) {
+		int minWidth = tech.getWidth(tech.subst[flip(tech.models[dev->model].stack[0])].draw)*3;
+
+		int gate = flip(result.nodes.size());
+		auto pos = netmap.find(dev->gate);
+		if (pos != netmap.end()) {
+			gate = pos->second;
+		}
+
+		int source = flip(result.nodes.size());
+		pos = netmap.find(dev->source);
+		if (pos != netmap.end()) {
+			source = pos->second;
+		}
+
+		int drain = flip(result.nodes.size());
+		pos = netmap.find(dev->drain);
+		if (pos != netmap.end()) {
+			drain = pos->second;
+		}
+
+		int threshold = dev->type == phy::Model::NMOS ? 1 : 0;
+		int driver = dev->type == phy::Model::NMOS ? 0 : 1;
+
+		attributes attr;
+		attr.size = ((float)dev->size[1]/(float)minWidth)/((float)dev->size[0]/(float)minLength);
+		attr.variant = tech.models[dev->model].variant;
+		attr.weak = attr.size < 1.0;
+		attr.force = attr.size > 10.0;
+
+		result.add_mos(source, gate, drain, threshold, driver, attr);
+	}
+
+	result.normalize_source_drain();
+
+	return result;
+}
+
+
 }
 

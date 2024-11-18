@@ -74,6 +74,7 @@ net::net(bool keep) {
 	this->keep = keep;
 	this->mirror = 0;
 	this->driver = -1;
+	this->isIO = false;
 }
 
 net::~net() {
@@ -994,7 +995,7 @@ vector<vector<int> > production_rule_set::size_with_stack_length() {
 			}
 			int stack_size = (float)curr.devs.size();
 			for (auto i = curr.devs.begin(); i != curr.devs.end(); i++) {
-				int device_to_source = (curr.devs.end()-i);
+				//int device_to_source = (curr.devs.end()-i);
 				// TODO(edward.bingham) nmos and pmos have different drive strengths
 				devs[*i].attr.size = max(devs[*i].attr.size, (float)stack_size);
 			}
@@ -1130,6 +1131,118 @@ void production_rule_set::size_devices(float ratio) {
 		auto dev = devs.begin()+(*i)[idx];
 		dev->attr.size = ratio;//min(dev->size, drive_strength
 	}
+}
+
+void production_rule_set::swap_source_drain(int dev) {
+	int prev_source = devs[dev].source;
+	int prev_drain = devs[dev].drain;
+	int driver = devs[dev].driver;
+
+	devs[dev].source = prev_drain;
+	devs[dev].drain = prev_source;
+
+	for (auto i = at(prev_source).remote.begin(); i != at(prev_source).remote.end(); i++) {
+		at(*i).sourceOf[driver].erase(find(at(*i).sourceOf[driver].begin(), at(*i).sourceOf[driver].end(), dev));
+	}
+	for (auto i = at(devs[dev].source).remote.begin(); i != at(devs[dev].source).remote.end(); i++) {
+		at(*i).sourceOf[driver].insert(lower_bound(at(*i).sourceOf[driver].begin(), at(*i).sourceOf[driver].end(), dev), dev);
+	}
+
+	for (auto i = at(prev_drain).remote.begin(); i != at(prev_drain).remote.end(); i++) {
+		at(*i).drainOf[driver].erase(find(at(*i).drainOf[driver].begin(), at(*i).drainOf[driver].end(), dev));
+	}
+	for (auto i = at(devs[dev].drain).remote.begin(); i != at(devs[dev].drain).remote.end(); i++) {
+		at(*i).drainOf[driver].insert(lower_bound(at(*i).drainOf[driver].begin(), at(*i).drainOf[driver].end(), dev), dev);
+	}
+}
+
+void production_rule_set::normalize_source_drain() {
+	struct frame {
+		int net;
+		int val;
+	};
+
+	list<frame> frames;
+	for (int i = 0; i < (int)nets.size(); i++) {
+		if (nets[i].driver == 1 or (nets[i].isIO and nets[i].drainOf[0].empty() and nets[i].sourceOf[0].empty())) {
+			frames.push_back({i, 1});
+		}
+		if (nets[i].driver == 0 or (nets[i].isIO and nets[i].drainOf[1].empty() and nets[i].sourceOf[1].empty())) {
+			frames.push_back({i, 0});
+		}
+	}
+
+	set<int> seen;
+	set<pair<int, int> > visited;
+
+	// propagate from source to drain
+	while (not frames.empty()) {
+		auto curr = frames.front();
+		frames.pop_front();
+		visited.insert({curr.net, curr.val});
+
+		vector<int> drains = at(curr.net).drainOf[curr.val];
+		for (auto i = drains.begin(); i != drains.end(); i++) {
+			if (seen.find(*i) == seen.end() and find(at(curr.net).remote.begin(), at(curr.net).remote.end(), devs[*i].drain) != at(curr.net).remote.end()) {
+				swap_source_drain(*i);
+			}
+		}
+
+		for (auto i = at(curr.net).sourceOf[curr.val].begin(); i != at(curr.net).sourceOf[curr.val].end(); i++) {
+			if (seen.find(*i) == seen.end()) {
+				if (not at(devs[*i].drain).isIO
+					and at(devs[*i].drain).gateOf[0].empty()
+					and at(devs[*i].drain).gateOf[1].empty()
+					and at(devs[*i].drain).drainOf[1-curr.val].empty()
+					and at(devs[*i].drain).sourceOf[1-curr.val].empty()) {
+					devs[*i].attr.set_internal();
+					frames.push_back({devs[*i].drain, curr.val});
+				}
+				seen.insert(*i);
+			}
+		}
+	}
+
+	// find devices we missed
+	/*for (int i = 0; i < (int)devs.size(); i++) {
+		if (seen.find(i) == seen.end()) {
+			if (visited.find({devs[i].drain, devs[i].driver}) != visited.end()) {
+				frames.push_back({devs[i].drain, devs[i].driver});
+			} else if (visited.find({devs[i].source, devs[i].driver}) != visited.end()) {
+				frames.push_back({devs[i].source, devs[i].driver});
+			}
+		}
+	}
+
+	printf("frames: %d\n", (int)frames.size());
+
+	// propagate from drain to source
+	while (not frames.empty()) {
+		auto curr = frames.front();
+		frames.pop_front();
+		visited.insert({curr.net, curr.val});
+
+		vector<int> sources = at(curr.net).sourceOf[curr.val];
+		for (auto i = sources.begin(); i != sources.end(); i++) {
+			if (seen.find(*i) == seen.end() and find(at(curr.net).remote.begin(), at(curr.net).remote.end(), devs[*i].drain) != at(curr.net).remote.end()) {
+				swap_source_drain(*i);
+			}
+		}
+
+		for (auto i = at(curr.net).drainOf[curr.val].begin(); i != at(curr.net).drainOf[curr.val].end(); i++) {
+			if (seen.find(*i) == seen.end()) {
+				if (not at(devs[*i].drain).isIO
+					and at(devs[*i].drain).gateOf[0].empty()
+					and at(devs[*i].drain).gateOf[1].empty()
+					and at(devs[*i].drain).drainOf[1-curr.val].empty()
+					and at(devs[*i].drain).sourceOf[1-curr.val].empty()) {
+					devs[*i].attr.set_internal();
+				}
+				frames.push_back({devs[*i].source, curr.val});
+				seen.insert(*i);
+			}
+		}
+	}*/
 }
 
 }
