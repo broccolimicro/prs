@@ -35,7 +35,7 @@ sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs,
 			continue;
 		}
 		int type = tech.models[model].type;
-		int minWidth = tech.getWidth(tech.subst[flip(tech.models[model].stack[0])].draw)*3;
+		int minWidth = tech.getWidth(tech.at(tech.models[model].diff).draw)*3;
 		vec2i size(1.0,1.0);
 		if (dev->attr.size < 1.0) {
 			size[0] = (int)ceil(((float)minLength)/dev->attr.size);
@@ -118,7 +118,7 @@ production_rule_set extract_rules(ucs::variable_set &v, const phy::Tech &tech, c
 	result.set_power(vdd, gnd);
 
 	for (auto dev = ckt.mos.begin(); dev != ckt.mos.end(); dev++) {
-		int minWidth = tech.getWidth(tech.subst[flip(tech.models[dev->model].stack[0])].draw)*3;
+		int minWidth = tech.getWidth(tech.at(tech.models[dev->model].diff).draw)*3;
 
 		int gate = flip(result.nodes.size());
 		auto pos = netmap.find(dev->gate);
