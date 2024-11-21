@@ -20,29 +20,42 @@ sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs,
 	int minLength = tech.getWidth(tech.wires[0].draw);
 
 	for (auto dev = prs.devs.begin(); dev != prs.devs.end(); dev++) {
-		int model = 0;
-		for (model = 0; model < (int)tech.models.size(); model++) {
-			auto m = tech.models.begin()+model;
-			if (((m->type == phy::Model::NMOS and dev->threshold == 1)
-					or (m->type == phy::Model::PMOS and dev->threshold == 0))
-				and ((dev->attr.variant == "" and m->name.find("svt") != string::npos) or (
-					m->name.find(dev->attr.variant) != string::npos))) {
-				break;
-			}
-		}
-		if (model >= (int)tech.models.size()) {
-			error("", std::string(dev->threshold == 1 ? "nmos" : "pmos") + " transistor variant " + (dev->attr.variant == "" ? "svt" : dev->attr.variant) + " not found.", __FILE__, __LINE__);
+		int type = dev->threshold == 1 ? phy::Model::NMOS : phy::Model::PMOS;
+		string variant = dev->attr.variant == "" ? "svt" : dev->attr.variant;
+		int model = tech.findModel(type, variant);
+		if (model < 0) {
+			error("", std::string(dev->threshold == 1 ? "nmos" : "pmos") + " transistor variant " + variant + " not found.", __FILE__, __LINE__);
 			continue;
 		}
-		int type = tech.models[model].type;
+
+		// TODO(edward.bingham) this is a cheap trick for the PN ratio and it will
+		// fall apart the moment someone uses different variants for the nmos and
+		// pmos transistors. Really, I should understand the strength of every
+		// condition in the sizing problem and size accordingly.
+		int other = tech.findModel(1-type, variant);
+		if (other < 0) {
+			other = tech.findModel(1-type, "svt");
+		}
+
+		float thisResist = tech.at(tech.models[model].diff).resistivity;
+		float otherResist = thisResist;
+		if (other >= 0) {
+			otherResist = tech.at(tech.models[other].diff).resistivity;
+		}
+
+		float strength = dev->attr.size;
+		if (thisResist > otherResist) {
+			strength *= thisResist/otherResist;
+		}
+
 		int minWidth = tech.getWidth(tech.at(tech.models[model].diff).draw)*3;
 		vec2i size(1.0,1.0);
-		if (dev->attr.size < 1.0) {
-			size[0] = (int)ceil(((float)minLength)/dev->attr.size);
+		if (strength < 1.0) {
+			size[0] = (int)ceil(((float)minLength)/strength);
 			size[1] = minWidth;
 		} else {
 			size[0] = minLength;
-			size[1] = (int)ceil(dev->attr.size*(float)minWidth);
+			size[1] = (int)ceil(strength*(float)minWidth);
 		}
 
 		result.push(sch::Mos(tech, model, type, prs.uid(dev->drain), prs.uid(dev->gate), prs.uid(dev->source), prs.uid(prs.pwr[0][1-dev->threshold]), size));
