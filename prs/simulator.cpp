@@ -6,8 +6,6 @@
 
 namespace prs {
 
-const bool debug = true;
-
 enabled_transition::enabled_transition() {
 	this->fire_at = 0;
 	this->net = 0;
@@ -67,12 +65,14 @@ simulator::simulator()
 {
 	base = NULL;
 	variables = NULL;
+	debug = false;
 }
 
-simulator::simulator(const production_rule_set *base, const ucs::variable_set *variables)
+simulator::simulator(const production_rule_set *base, const ucs::variable_set *variables, bool debug)
 {
 	this->base = base;
 	this->variables = variables;
+	this->debug = debug;
 	if (variables != NULL) {
 		for (int i = 0; i < (int)base->nets.size(); i++) {
 			if (base->nets[i].driver == 1) {

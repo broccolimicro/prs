@@ -35,10 +35,12 @@ bool operator>(enabled_transition t0, enabled_transition t1);
 
 struct simulator {
 	simulator();
-	simulator(const production_rule_set *base, const ucs::variable_set *variables);
+	simulator(const production_rule_set *base, const ucs::variable_set *variables, bool debug=false);
 	~simulator();
 
 	using queue=calendar_queue<enabled_transition, enabled_priority>;
+
+	bool debug;
 
 	const production_rule_set *base;
 	const ucs::variable_set *variables;
