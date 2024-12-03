@@ -571,12 +571,14 @@ int production_rule_set::add(boolean::cube guard, int drain, int driver, attribu
 }
 
 int production_rule_set::add_hfactor(boolean::cover guard, int drain, int driver, attributes attr, vector<int> order) {
-	if (guard.cubes.size() == 1) {
+	if (guard.is_null()) {
+		return std::numeric_limits<int>::max();
+	} if (guard.cubes.size() == 1) {
 		return add(guard.cubes[0], drain, driver, attr, order);
 	}
 
 	boolean::cube common = guard.supercube();
-	if (not common.is_tautology()) {
+	if (not common.is_tautology() and not common.is_null()) {
 		guard.cofactor(common);
 		drain = add(common, drain, driver, attr, order);
 		attr.set_internal();
@@ -587,14 +589,21 @@ int production_rule_set::add_hfactor(boolean::cover guard, int drain, int driver
 		guard.partition(left, right);
 		int drainLeft = add_hfactor(left, drain, driver, attr, order);
 		drain = add_hfactor(right, drain, driver, attr, order);
-		drain = connect(drainLeft, drain);
+		if (drain == std::numeric_limits<int>::max()) {
+			drain = drainLeft;
+		} else if (drainLeft != std::numeric_limits<int>::max()) {
+			drain = connect(drainLeft, drain);
+		}
 	}
 
 	return drain;
 }
 
 void production_rule_set::add(int source, boolean::cover guard, int var, int val, attributes attr, vector<int> order) {
-	connect(add_hfactor(guard, var, val, attr, order), source);
+	int drain = add_hfactor(guard, var, val, attr, order);
+	if (drain != std::numeric_limits<int>::max()) {
+		connect(drain, source);
+	}
 }
 
 void production_rule_set::add(int source, boolean::cover guard, boolean::cover action, attributes attr, vector<int> order) {
