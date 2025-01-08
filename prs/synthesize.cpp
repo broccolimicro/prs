@@ -1,13 +1,19 @@
 #include "synthesize.h"
 #include <cmath>
 #include <interpret_ucs/export.h>
+#include <common/timer.h>
 
 namespace prs {
 
-sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs, const ucs::variable_set &v) {
+sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs, const ucs::variable_set &v, bool report_progress) {
+	if (report_progress) {
+		printf("  %s...", prs.name.c_str());
+		fflush(stdout);
+	}
+	
+	Timer tmr;
 	sch::Subckt result;
-
-	result.name = "top";
+	result.name = prs.name;
 	for (int i = 0; i < (int)prs.nets.size(); i++) {
 		// TODO(edward.bingham) we gotta figure out IO
 		result.push(sch::Net(export_variable_name(i, v).to_string(), prs.nets[i].driver >= 0));
@@ -67,6 +73,15 @@ sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs,
 				result.connectRemote(prs.uid(i), prs.uid(*j));
 			}
 		}
+	}
+
+	if (report_progress) {
+		int gateArea = 0;
+		for (auto d = result.mos.begin(); d != result.mos.end(); d++) {
+			gateArea += d->size[0]*d->size[1];
+		}
+
+		printf("[%s%lu NETS %lu TRANSISTORS %d DBUNIT2 GATE AREA%s]\t%gs\n", KGRN, result.nets.size(), result.mos.size(), gateArea, KNRM, tmr.since());
 	}
 	return result;
 }

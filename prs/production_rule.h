@@ -85,6 +85,8 @@ struct production_rule_set
 	production_rule_set(const ucs::variable_set &v);
 	~production_rule_set();
 
+	string name;
+
 	vector<array<int, 2> > pwr;
 
 	vector<device> devs;
@@ -146,11 +148,11 @@ struct production_rule_set
 	void add_inverter_between(int net, int _net, attributes attr=attributes(), int vdd=std::numeric_limits<int>::max(), int gnd=std::numeric_limits<int>::max());
 	int add_inverter_after(int net, attributes attr=attributes(), int vdd=std::numeric_limits<int>::max(), int gnd=std::numeric_limits<int>::max());
 	array<int, 2> add_buffer_before(int net, attributes attr=attributes(), int vdd=std::numeric_limits<int>::max(), int gnd=std::numeric_limits<int>::max());
-	void add_keepers(ucs::variable_set &v, bool share=true, bool hcta=false, boolean::cover keep=1);
+	void add_keepers(ucs::variable_set &v, bool share=true, bool hcta=false, boolean::cover keep=1, bool report_progress=false);
 	vector<bool> identify_weak_drivers();
 
 	vector<vector<int> > size_with_stack_length();
-	void size_devices(float ratio=0.1);
+	void size_devices(float ratio=0.1, bool report_progress=false);
 
 	void swap_source_drain(int dev);
 	void normalize_source_drain();

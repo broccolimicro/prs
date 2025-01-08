@@ -1,6 +1,7 @@
 #include "production_rule.h"
 #include <limits>
 #include <common/message.h>
+#include <common/timer.h>
 #include <interpret_boolean/export.h>
 
 using namespace std;
@@ -831,7 +832,15 @@ array<int, 2> production_rule_set::add_buffer_before(int net, attributes attr, i
 	return {__net, _net};
 }
 
-void production_rule_set::add_keepers(ucs::variable_set &v, bool share, bool hcta, boolean::cover keep) {
+void production_rule_set::add_keepers(ucs::variable_set &v, bool share, bool hcta, boolean::cover keep, bool report_progress) {
+	if (report_progress) {
+		printf("  %s...", name.c_str());
+		fflush(stdout);
+	}
+
+	int inverterCount = 0;
+
+	Timer tmr;
 	bool hasweakpwr = false;
 	array<int, 2> sharedweakpwr={
 		std::numeric_limits<int>::max(),
@@ -871,8 +880,10 @@ void production_rule_set::add_keepers(ucs::variable_set &v, bool share, bool hct
 		int __net=net;
 		if (not has_inverter_after(__net, _net)) {
 			if (hcta) {
+				inverterCount++;
 				_net = add_inverter_after(__net, attributes::instant());
 			} else {
+				inverterCount += 2;
 				auto n = add_buffer_before(__net);
 				__net = n[0];
 				_net = n[1];
@@ -906,6 +917,10 @@ void production_rule_set::add_keepers(ucs::variable_set &v, bool share, bool hct
 		}
 
 		add_inverter_between(_net, __net, attributes(), weakpwr[1], weakpwr[0]);
+	}
+
+	if (report_progress) {
+		printf("[%s%d INVERTERS ADDED%s]\t%gs\n", KGRN, inverterCount, KNRM, tmr.since());
 	}
 }
 
@@ -1028,7 +1043,7 @@ vector<vector<int> > production_rule_set::size_with_stack_length() {
 	return device_tree;
 }
 
-void production_rule_set::size_devices(float ratio) {
+void production_rule_set::size_devices(float ratio, bool report_progress) {
 	// TODO(edward.bingham) The general case sizing problem is really quite
 	// challenging. We can take the transistor network, break it up into mutually
 	// exclusive conditions, then for each of those conditions, we can treat the
@@ -1053,6 +1068,13 @@ void production_rule_set::size_devices(float ratio) {
  
 	// Depth first search from the drains to the source to determine stack
 	// length. This allows us to compute device-level sizing
+
+	if (report_progress) {
+		printf("  %s...", name.c_str());
+		fflush(stdout);
+	}
+
+	Timer tmr;
 
 	vector<vector<int> > device_tree = size_with_stack_length();
 
@@ -1139,6 +1161,14 @@ void production_rule_set::size_devices(float ratio) {
 		// weak driver's strength and assign a size based on that.
 		auto dev = devs.begin()+(*i)[idx];
 		dev->attr.size = ratio;//min(dev->size, drive_strength
+	}
+
+	if (report_progress) {
+		float totalStrength = 0;
+		for (auto d = devs.begin(); d != devs.end(); d++) {
+			totalStrength += d->attr.size;
+		}
+		printf("[%s%g TOTAL STRENGTH%s]\t%gs\n", KGRN, totalStrength, KNRM, tmr.since());
 	}
 }
 
