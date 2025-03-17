@@ -2,7 +2,6 @@
 
 #include <common/standard.h>
 #include <boolean/cover.h>
-#include <ucs/variable.h>
 
 #include <vector>
 #include <array>
@@ -41,7 +40,7 @@ struct device {
 	device(int source, int gate, int drain, int threshold, int driver, attributes attr=attributes());
 	~device();
 
-	// index into nets if positive or nodes if negative
+	// index into nets
 	int source;
 	int gate;
 	int drain;
@@ -54,12 +53,15 @@ struct device {
 
 struct net {
 	net(bool keep=false);
+	net(string name, int region=0, bool keep=false, bool isIO=false);
 	~net();
 
 	// These arrays should include remote devices!
 	// Check if the device is remote by comparing the net id against the relevant
 	// gate, source, or drain id. If they are different, then the device is
 	// remote and the transition should be delayed.
+	string name;
+	int region;
 
 	// indexed by device::threshold
 	array<vector<int>, 2> gateOf;
@@ -77,12 +79,12 @@ struct net {
 	int driver;
 
 	void add_remote(int uid);
+	bool isNode() const;
 };
 
 struct production_rule_set
 {
 	production_rule_set();
-	production_rule_set(const ucs::variable_set &v);
 	~production_rule_set();
 
 	string name;
@@ -90,9 +92,8 @@ struct production_rule_set
 	vector<array<int, 2> > pwr;
 
 	vector<device> devs;
-	// nets in this array should be ordered by uid from ucs
+	// nets in this array should be ordered by uid
 	vector<net> nets;
-	vector<net> nodes;
 
 	// settings that control behavior
 	bool assume_nobackflow; // (default false) nmos no longer drives weak 1 and pmos no longer drives weak 0
@@ -105,15 +106,15 @@ struct production_rule_set
 	bool require_noninterfering; // Vdd to GND shorts not allowed if true
 	bool require_adiabatic;      // non-adiabatic transitions not allowed if true
 
-	void print(const ucs::variable_set &v);
-	void init(const ucs::variable_set &v);
+	void print();
 
-	int uid(int index) const;
-	int idx(int uid) const;
-	static int flip(int index);
-	net &at(int index);
-	const net &at(int index) const;
-	net &create(int index=std::numeric_limits<int>::max(), bool keep=false);
+	int create(net n=net());
+
+	int netIndex(string name, int region=0) const;
+	int netIndex(string name, int region=0, bool define=false);
+	pair<string, int> netAt(int uid) const;
+
+	vector<vector<int> > remote_groups() const;
 
 	int sources(int net, int value) const;
 	int drains(int net, int value) const;
@@ -148,7 +149,7 @@ struct production_rule_set
 	void add_inverter_between(int net, int _net, attributes attr=attributes(), int vdd=std::numeric_limits<int>::max(), int gnd=std::numeric_limits<int>::max());
 	int add_inverter_after(int net, attributes attr=attributes(), int vdd=std::numeric_limits<int>::max(), int gnd=std::numeric_limits<int>::max());
 	array<int, 2> add_buffer_before(int net, attributes attr=attributes(), int vdd=std::numeric_limits<int>::max(), int gnd=std::numeric_limits<int>::max());
-	void add_keepers(ucs::variable_set &v, bool share=true, bool hcta=false, boolean::cover keep=1, bool report_progress=false);
+	void add_keepers(bool share=true, bool hcta=false, boolean::cover keep=1, bool report_progress=false);
 	vector<bool> identify_weak_drivers();
 
 	vector<vector<int> > size_with_stack_length();

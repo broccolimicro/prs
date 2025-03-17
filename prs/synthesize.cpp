@@ -1,11 +1,12 @@
 #include "synthesize.h"
 #include <cmath>
-#include <interpret_ucs/export.h>
 #include <common/timer.h>
+#include <common/message.h>
+#include <common/text.h>
 
 namespace prs {
 
-sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs, const ucs::variable_set &v, bool report_progress) {
+sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs, bool report_progress) {
 	if (report_progress) {
 		printf("  %s...", prs.name.c_str());
 		fflush(stdout);
@@ -16,14 +17,13 @@ sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs,
 	result.name = prs.name;
 	for (int i = 0; i < (int)prs.nets.size(); i++) {
 		// TODO(edward.bingham) we gotta figure out IO
-		result.push(sch::Net(export_variable_name(i, v).to_string(), prs.nets[i].driver >= 0));
+		result.push(sch::Net(prs.nets[i].name, prs.nets[i].driver >= 0));
 	}
 
-	for (int i = -1; i >= -(int)prs.nodes.size(); i--) {
-		result.push(sch::Net(export_variable_name(i, v).to_string(), false));
+	int minLength = 1;
+	if (not tech.wires.empty()) {
+		minLength = tech.getWidth(tech.wires[0].draw);
 	}
-
-	int minLength = tech.getWidth(tech.wires[0].draw);
 
 	for (auto dev = prs.devs.begin(); dev != prs.devs.end(); dev++) {
 		int type = dev->threshold == 1 ? phy::Model::NMOS : phy::Model::PMOS;
@@ -64,13 +64,13 @@ sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs,
 			size[1] = (int)ceil(strength*(float)minWidth);
 		}
 
-		result.push(sch::Mos(tech, model, type, prs.uid(dev->drain), prs.uid(dev->gate), prs.uid(dev->source), prs.uid(prs.pwr[0][1-dev->threshold]), size));
+		result.push(sch::Mos(tech, model, type, dev->drain, dev->gate, dev->source, prs.pwr[0][1-dev->threshold], size));
 	}
 
-	for (int i = -(int)prs.nodes.size(); i < (int)prs.nets.size(); i++) {
-		for (auto j = prs.at(i).remote.begin(); j != prs.at(i).remote.end(); j++) {
+	for (int i = 0; i < (int)prs.nets.size(); i++) {
+		for (auto j = prs.nets[i].remote.begin(); j != prs.nets[i].remote.end(); j++) {
 			if (i != *j) {
-				result.connectRemote(prs.uid(i), prs.uid(*j));
+				result.connectRemote(i, *j);
 			}
 		}
 	}
@@ -104,23 +104,23 @@ bool isNode(string name) {
 	return true;
 }
 
-production_rule_set extract_rules(ucs::variable_set &v, const phy::Tech &tech, const sch::Subckt &ckt) {
+production_rule_set extract_rules(const phy::Tech &tech, const sch::Subckt &ckt) {
 	production_rule_set result;
 
-	int minLength = tech.getWidth(tech.wires[0].draw);
+	int minLength = 1;
+	if (not tech.wires.empty()) {
+		minLength = tech.getWidth(tech.wires[0].draw);
+	}
 
 	int vdd = std::numeric_limits<int>::max();
 	int gnd = std::numeric_limits<int>::max();
 
 	map<int, int> netmap;
 	for (int i = 0; i < (int)ckt.nets.size(); i++) {
-		int uid = flip(result.nodes.size());
-		if (not isNode(ckt.nets[i].name)) {
-			uid = v.define(ckt.nets[i].name);
-		}
+		int uid = result.nets.size();
 		result.create(uid);
 		if (ckt.nets[i].remoteIO) {
-			result.at(uid).isIO = true;
+			result.nets[uid].isIO = true;
 		}
 
 		netmap.insert(pair<int, int>(i, uid));
@@ -136,31 +136,32 @@ production_rule_set extract_rules(ucs::variable_set &v, const phy::Tech &tech, c
 		}
 	}
 	if (vdd == std::numeric_limits<int>::max()) {
-		vdd = v.define(string("Vdd"));
-		result.create(vdd);
+		vdd = result.create(net("Vdd"));
 	}
 	if (gnd == std::numeric_limits<int>::max()) {
-		gnd = v.define(string("GND"));
-		result.create(gnd);
+		gnd = result.create(net("GND"));
 	}
 	result.set_power(vdd, gnd);
 
 	for (auto dev = ckt.mos.begin(); dev != ckt.mos.end(); dev++) {
-		int minWidth = tech.getWidth(tech.at(tech.models[dev->model].diff).draw)*3;
+		int minWidth = 1;
+		if (dev->model >= 0 and dev->model < (int)tech.models.size()) {
+			minWidth = tech.getWidth(tech.at(tech.models[dev->model].diff).draw)*3;
+		}
 
-		int gate = flip(result.nodes.size());
+		int gate = result.nets.size();
 		auto pos = netmap.find(dev->gate);
 		if (pos != netmap.end()) {
 			gate = pos->second;
 		}
 
-		int source = flip(result.nodes.size());
+		int source = result.nets.size();
 		pos = netmap.find(dev->source);
 		if (pos != netmap.end()) {
 			source = pos->second;
 		}
 
-		int drain = flip(result.nodes.size());
+		int drain = result.nets.size();
 		pos = netmap.find(dev->drain);
 		if (pos != netmap.end()) {
 			drain = pos->second;
@@ -171,7 +172,10 @@ production_rule_set extract_rules(ucs::variable_set &v, const phy::Tech &tech, c
 
 		attributes attr;
 		attr.size = ((float)dev->size[1]/(float)minWidth)/((float)dev->size[0]/(float)minLength);
-		attr.variant = tech.models[dev->model].variant;
+		attr.variant = "svt";
+		if (dev->model >= 0 and dev->model < (int)tech.models.size()) {
+			attr.variant = tech.models[dev->model].variant;
+		}
 		attr.weak = attr.size < 1.0;
 		attr.force = attr.size > 10.0;
 

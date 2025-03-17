@@ -72,10 +72,20 @@ device::~device() {
 }
 
 net::net(bool keep) {
+	this->region = 0;
 	this->keep = keep;
+	this->isIO = false;
 	this->mirror = 0;
 	this->driver = -1;
-	this->isIO = false;
+}
+
+net::net(string name, int region, bool keep, bool isIO) {
+	this->name = name;
+	this->region = region;
+	this->keep = keep;
+	this->isIO = isIO;
+	this->mirror = 0;
+	this->driver = -1;
 }
 
 net::~net() {
@@ -88,6 +98,10 @@ void net::add_remote(int uid) {
 	}
 }
 
+bool net::isNode() const {
+	return name.empty();
+}
+
 production_rule_set::production_rule_set() {
 	assume_nobackflow = false;
 	assume_static = false;
@@ -97,115 +111,85 @@ production_rule_set::production_rule_set() {
 	require_adiabatic = false;
 }
 
-production_rule_set::production_rule_set(const ucs::variable_set &v) {
-	assume_nobackflow = false;
-	assume_static = false;
-	require_driven = false;
-	require_stable = false;
-	require_noninterfering = false;
-	require_adiabatic = false;
-	init(v);
-}
-
 production_rule_set::~production_rule_set() {
 }
 
-void production_rule_set::print(const ucs::variable_set &v) {
+void production_rule_set::print() {
 	cout << "nets " << nets.size() << endl;
 	for (int i = 0; i < (int)nets.size(); i++) {
-		cout << "net " << i << ": " << export_variable_name(i, v).to_string() << " gateOf=" << to_string(nets[i].gateOf[0]) << to_string(nets[i].gateOf[1]) << " sourceOf=" << to_string(nets[i].sourceOf[0]) << to_string(nets[i].sourceOf[1]) << " drainOf=" << to_string(nets[i].drainOf[0]) << to_string(nets[i].drainOf[1]) << " remote=" << to_string(nets[i].remote) << (nets[i].keep ? " keep" : "") << endl;
-	}
-
-	cout << "nodes " << nodes.size() << endl;
-	for (int i = 0; i < (int)nodes.size(); i++) {
-		cout << "node " << i << ": " << export_variable_name(flip(i), v).to_string() << " gateOf=" << to_string(nodes[i].gateOf[0]) << to_string(nodes[i].gateOf[1]) << " sourceOf=" << to_string(nodes[i].sourceOf[0]) << to_string(nodes[i].sourceOf[1]) << " drainOf=" << to_string(nodes[i].drainOf[0]) << to_string(nodes[i].drainOf[1]) << " remote=" << to_string(nodes[i].remote) << (nodes[i].keep ? " keep" : "") << endl;
+		cout << "net " << i << ": " << nets[i].name << " gateOf=" << to_string(nets[i].gateOf[0]) << to_string(nets[i].gateOf[1]) << " sourceOf=" << to_string(nets[i].sourceOf[0]) << to_string(nets[i].sourceOf[1]) << " drainOf=" << to_string(nets[i].drainOf[0]) << to_string(nets[i].drainOf[1]) << " remote=" << to_string(nets[i].remote) << (nets[i].keep ? " keep" : "") << endl;
 	}
 
 	cout << "devs " << devs.size() << endl;
 	for (int i = 0; i < (int)devs.size(); i++) {
-		cout << "dev " << i << ": source=" << export_variable_name(devs[i].source, v).to_string() << "(" << devs[i].source << ") gate=" << export_variable_name(devs[i].gate, v).to_string() << "(" << devs[i].gate << ") drain=" << export_variable_name(devs[i].drain, v).to_string() << "(" << devs[i].drain << ") threshold=" << devs[i].threshold << " driver=" << devs[i].driver << (not devs[i].attr.assume.is_tautology() ? " {" + export_expression(devs[i].attr.assume, v).to_string() + "}" : "") << (devs[i].attr.weak ? " weak" : "") << (devs[i].attr.pass ? " pass" : "") << endl;
+		cout << "dev " << i << ": source=" << nets[devs[i].source].name << "(" << devs[i].source << ") gate=" << nets[devs[i].gate].name << "(" << devs[i].gate << ") drain=" << nets[devs[i].drain].name << "(" << devs[i].drain << ") threshold=" << devs[i].threshold << " driver=" << devs[i].driver << (not devs[i].attr.assume.is_tautology() ? " {" + export_expression(devs[i].attr.assume, *this).to_string() + "}" : "") << (devs[i].attr.weak ? " weak" : "") << (devs[i].attr.pass ? " pass" : "") << endl;
 	}
 }
 
-void production_rule_set::init(const ucs::variable_set &v) {
-	if (nets.size() < v.nodes.size()) {
-		create(v.nodes.size()-1);
-	}
-	vector<vector<int> > groups = v.get_groups();
-	for (int i = 0; i < (int)groups.size(); i++) {
-		for (int j = 0; j < (int)groups[i].size(); j++) {
-			nets[groups[i][j]].remote = groups[i];
-		}
-	}
-}
-
-int production_rule_set::uid(int index) const {
-	if (index < 0) {
-		return (int)nets.size()+flip(index);
-	}
-	return index;
-}
-
-int production_rule_set::idx(int uid) const {
-	if (uid >= (int)nets.size()) {
-		return flip(uid-(int)nets.size());
-	}
+int production_rule_set::create(net n) {
+	int uid = (int)nets.size();
+	nets.push_back(n);
+	nets.back().remote.push_back(uid);
 	return uid;
 }
 
-int production_rule_set::flip(int index) {
-	return -index-1;
+int production_rule_set::netIndex(string name, int region) const {
+	for (int i = 0; i < (int)nets.size(); i++) {
+		if (nets[i].name == name and nets[i].region == region) {
+			return i;
+		}
+	}
+	
+	return -1;
 }
 
-net &production_rule_set::at(int index) {
-	if (index >= 0) {
-		return nets[index];
-	}
-	return nodes[flip(index)];
-}
-
-const net &production_rule_set::at(int index) const {
-	if (index >= 0) {
-		return nets[index];
-	}
-	return nodes[flip(index)];
-}
-
-net &production_rule_set::create(int index, bool keep) {
-	if (index == std::numeric_limits<int>::max()) {
-		index = flip(nodes.size());
-	}
-
-	if (index >= 0) {
-		int sz = (int)nets.size();
-		if (index >= sz) {
-			nets.resize(index+1);
-			for (int i = sz; i < (int)nets.size(); i++) {
-				nets[i].add_remote(i);
+int production_rule_set::netIndex(string name, int region, bool define) {
+	vector<int> remote;
+	for (int i = 0; i < (int)nets.size(); i++) {
+		if (nets[i].name == name) {
+			remote.push_back(i);
+			if (nets[i].region == region) {
+				return i;
 			}
 		}
-		if (keep) {
-			nets[index].keep = true;
+	}
+
+	if (define or not remote.empty()) {
+		int uid = create(net(name, region));
+		for (int i = 0; i < (int)remote.size(); i++) {
+			connect_remote(uid, remote[i]);
 		}
-		return nets[index];
+		return uid;
 	}
-	index = flip(index);
-	int sz = (int)nodes.size();
-	if (index >= sz) {
-		nodes.resize(index+1);
-		for (int i = sz; i < (int)nodes.size(); i++) {
-			nodes[i].add_remote(flip(i));
+	return -1;
+}
+
+pair<string, int> production_rule_set::netAt(int uid) const {
+	if (uid < 0) {
+		return pair<string, int>("_" + ::to_string(uid), 0);
+	}
+	return pair<string, int>(nets[uid].name, nets[uid].region);
+}
+
+vector<vector<int> > production_rule_set::remote_groups() const {
+	vector<vector<int> > groups;
+
+	for (int i = 0; i < (int)nets.size(); i++) {
+		bool found = false;
+		for (int j = 0; j < (int)groups.size() and not found; j++) {
+			found = (find(groups[j].begin(), groups[j].end(), i) != groups[j].end());
+		}
+		if (not found) {
+			groups.push_back(nets[i].remote);
 		}
 	}
-	if (keep) {
-		nodes[index].keep = true;
-	}
-	return nodes[index];
+
+	return groups;
 }
 
 int production_rule_set::sources(int net, int value) const {
 	int result = 0;
-	for (auto i = at(net).sourceOf[value].begin(); i != at(net).sourceOf[value].end(); i++) {
+	for (auto i = nets[net].sourceOf[value].begin(); i != nets[net].sourceOf[value].end(); i++) {
 		result += (devs[*i].source == net);
 	}
 	return result;
@@ -213,7 +197,7 @@ int production_rule_set::sources(int net, int value) const {
 
 int production_rule_set::drains(int net, int value) const {
 	int result = 0;
-	for (auto i = at(net).drainOf[value].begin(); i != at(net).drainOf[value].end(); i++) {
+	for (auto i = nets[net].drainOf[value].begin(); i != nets[net].drainOf[value].end(); i++) {
 		result += (devs[*i].drain == net);
 	}
 	return result;
@@ -221,7 +205,7 @@ int production_rule_set::drains(int net, int value) const {
 
 int production_rule_set::sources(int net, int value, attributes attr) const {
 	int result = 0;
-	for (auto i = at(net).sourceOf[value].begin(); i != at(net).sourceOf[value].end(); i++) {
+	for (auto i = nets[net].sourceOf[value].begin(); i != nets[net].sourceOf[value].end(); i++) {
 		result += (devs[*i].source == net and devs[*i].attr == attr);
 	}
 	return result;
@@ -229,7 +213,7 @@ int production_rule_set::sources(int net, int value, attributes attr) const {
 
 int production_rule_set::drains(int net, int value, attributes attr) const {
 	int result = 0;
-	for (auto i = at(net).drainOf[value].begin(); i != at(net).drainOf[value].end(); i++) {
+	for (auto i = nets[net].drainOf[value].begin(); i != nets[net].drainOf[value].end(); i++) {
 		result += (devs[*i].drain == net and devs[*i].attr == attr);
 	}
 	return result;
@@ -237,7 +221,7 @@ int production_rule_set::drains(int net, int value, attributes attr) const {
 
 int production_rule_set::sources(int net, int value, bool weak) const {
 	int result = 0;
-	for (auto i = at(net).sourceOf[value].begin(); i != at(net).sourceOf[value].end(); i++) {
+	for (auto i = nets[net].sourceOf[value].begin(); i != nets[net].sourceOf[value].end(); i++) {
 		result += (devs[*i].source == net and devs[*i].attr.weak == weak);
 	}
 	return result;
@@ -245,7 +229,7 @@ int production_rule_set::sources(int net, int value, bool weak) const {
 
 int production_rule_set::drains(int net, int value, bool weak) const {
 	int result = 0;
-	for (auto i = at(net).drainOf[value].begin(); i != at(net).drainOf[value].end(); i++) {
+	for (auto i = nets[net].drainOf[value].begin(); i != nets[net].drainOf[value].end(); i++) {
 		result += (devs[*i].drain == net and devs[*i].attr.weak == weak);
 	}
 	return result;
@@ -253,7 +237,7 @@ int production_rule_set::drains(int net, int value, bool weak) const {
 
 vector<attributes> production_rule_set::attribute_groups(int net, int value) const {
 	vector<attributes> result;
-	for (auto i = at(net).drainOf[value].begin(); i != at(net).drainOf[value].end(); i++) {
+	for (auto i = nets[net].drainOf[value].begin(); i != nets[net].drainOf[value].end(); i++) {
 		auto dev = devs.begin()+*i;
 		bool found = false;
 		for (auto j = result.begin(); j != result.end() and not found; j++) {
@@ -267,18 +251,18 @@ vector<attributes> production_rule_set::attribute_groups(int net, int value) con
 }
 
 void production_rule_set::set_power(int vdd, int gnd) {
-	at(vdd).keep = true;
-	at(vdd).driver = 1;
-	at(vdd).mirror = gnd;
-	at(gnd).keep = true;
-	at(gnd).driver = 0;
-	at(gnd).mirror = vdd;
+	nets[vdd].keep = true;
+	nets[vdd].driver = 1;
+	nets[vdd].mirror = gnd;
+	nets[gnd].keep = true;
+	nets[gnd].driver = 0;
+	nets[gnd].mirror = vdd;
 	pwr.push_back({gnd, vdd});
 }
 
 void production_rule_set::connect_remote(int n0, int n1) {
-	net *i0 = &at(n0);
-	net *i1 = &at(n1);
+	net *i0 = &nets[n0];
+	net *i1 = &nets[n1];
 
 	i1->remote.insert(i1->remote.end(), i0->remote.begin(), i0->remote.end());
 	sort(i1->remote.begin(), i1->remote.end());
@@ -308,10 +292,8 @@ void production_rule_set::connect_remote(int n0, int n1) {
 }
 
 int production_rule_set::connect(int n0, int n1) {
-	create(n1);
-	if (n0 == n1
-		or (n0 >= 0 and n0 >= (int)nets.size())
-		or (n0 < 0 and flip(n0) >= (int)nodes.size())) {
+	//create(n1);
+	if (n0 == n1 or n0 >= (int)nets.size()) {
 		return n1;
 	}
 
@@ -344,118 +326,84 @@ int production_rule_set::connect(int n0, int n1) {
 		}
 	}
 
-	for (auto i = at(n0).remote.begin(); i != at(n0).remote.end(); i++) {
+	for (auto i = nets[n0].remote.begin(); i != nets[n0].remote.end(); i++) {
 		if (*i == n0) {
 			continue;
 		}
 
-		at(*i).remote.insert(at(*i).remote.end(), at(n1).remote.begin(), at(n1).remote.end());
-		sort(at(*i).remote.begin(), at(*i).remote.end());
-		at(*i).remote.erase(unique(at(*i).remote.begin(), at(*i).remote.end()), at(*i).remote.end());
+		nets[*i].remote.insert(nets[*i].remote.end(), nets[n1].remote.begin(), nets[n1].remote.end());
+		sort(nets[*i].remote.begin(), nets[*i].remote.end());
+		nets[*i].remote.erase(unique(nets[*i].remote.begin(), nets[*i].remote.end()), nets[*i].remote.end());
 		for (int j = 0; j < 2; j++) {
-			at(*i).gateOf[j].insert(at(*i).gateOf[j].end(), at(n1).gateOf[j].begin(), at(n1).gateOf[j].end());
-			sort(at(*i).gateOf[j].begin(), at(*i).gateOf[j].end());
-			at(*i).gateOf[j].erase(unique(at(*i).gateOf[j].begin(), at(*i).gateOf[j].end()), at(*i).gateOf[j].end());
-			at(*i).drainOf[j].insert(at(*i).drainOf[j].end(), at(n1).drainOf[j].begin(), at(n1).drainOf[j].end());
-			sort(at(*i).drainOf[j].begin(), at(*i).drainOf[j].end());
-			at(*i).drainOf[j].erase(unique(at(*i).drainOf[j].begin(), at(*i).drainOf[j].end()), at(*i).drainOf[j].end());
-			at(*i).sourceOf[j].insert(at(*i).sourceOf[j].end(), at(n1).sourceOf[j].begin(), at(n1).sourceOf[j].end());
-			sort(at(*i).sourceOf[j].begin(), at(*i).sourceOf[j].end());
-			at(*i).sourceOf[j].erase(unique(at(*i).sourceOf[j].begin(), at(*i).sourceOf[j].end()), at(*i).sourceOf[j].end());
-			at(*i).rsourceOf[j].insert(at(*i).rsourceOf[j].end(), at(n1).rsourceOf[j].begin(), at(n1).rsourceOf[j].end());
-			sort(at(*i).rsourceOf[j].begin(), at(*i).rsourceOf[j].end());
-			at(*i).rsourceOf[j].erase(unique(at(*i).rsourceOf[j].begin(), at(*i).rsourceOf[j].end()), at(*i).rsourceOf[j].end());
+			nets[*i].gateOf[j].insert(nets[*i].gateOf[j].end(), nets[n1].gateOf[j].begin(), nets[n1].gateOf[j].end());
+			sort(nets[*i].gateOf[j].begin(), nets[*i].gateOf[j].end());
+			nets[*i].gateOf[j].erase(unique(nets[*i].gateOf[j].begin(), nets[*i].gateOf[j].end()), nets[*i].gateOf[j].end());
+			nets[*i].drainOf[j].insert(nets[*i].drainOf[j].end(), nets[n1].drainOf[j].begin(), nets[n1].drainOf[j].end());
+			sort(nets[*i].drainOf[j].begin(), nets[*i].drainOf[j].end());
+			nets[*i].drainOf[j].erase(unique(nets[*i].drainOf[j].begin(), nets[*i].drainOf[j].end()), nets[*i].drainOf[j].end());
+			nets[*i].sourceOf[j].insert(nets[*i].sourceOf[j].end(), nets[n1].sourceOf[j].begin(), nets[n1].sourceOf[j].end());
+			sort(nets[*i].sourceOf[j].begin(), nets[*i].sourceOf[j].end());
+			nets[*i].sourceOf[j].erase(unique(nets[*i].sourceOf[j].begin(), nets[*i].sourceOf[j].end()), nets[*i].sourceOf[j].end());
+			nets[*i].rsourceOf[j].insert(nets[*i].rsourceOf[j].end(), nets[n1].rsourceOf[j].begin(), nets[n1].rsourceOf[j].end());
+			sort(nets[*i].rsourceOf[j].begin(), nets[*i].rsourceOf[j].end());
+			nets[*i].rsourceOf[j].erase(unique(nets[*i].rsourceOf[j].begin(), nets[*i].rsourceOf[j].end()), nets[*i].rsourceOf[j].end());
 		}
 	}
 
-	for (auto i = at(n1).remote.begin(); i != at(n1).remote.end(); i++) {
+	for (auto i = nets[n1].remote.begin(); i != nets[n1].remote.end(); i++) {
 		if (*i == n1) {
 			continue;
 		}
 
-		at(*i).remote.insert(at(*i).remote.end(), at(n0).remote.begin(), at(n0).remote.end());
-		sort(at(*i).remote.begin(), at(*i).remote.end());
-		at(*i).remote.erase(unique(at(*i).remote.begin(), at(*i).remote.end()), at(*i).remote.end());
+		nets[*i].remote.insert(nets[*i].remote.end(), nets[n0].remote.begin(), nets[n0].remote.end());
+		sort(nets[*i].remote.begin(), nets[*i].remote.end());
+		nets[*i].remote.erase(unique(nets[*i].remote.begin(), nets[*i].remote.end()), nets[*i].remote.end());
 		for (int j = 0; j < 2; j++) {
-			at(*i).gateOf[j].insert(at(*i).gateOf[j].end(), at(n0).gateOf[j].begin(), at(n0).gateOf[j].end());
-			sort(at(*i).gateOf[j].begin(), at(*i).gateOf[j].end());
-			at(*i).gateOf[j].erase(unique(at(*i).gateOf[j].begin(), at(*i).gateOf[j].end()), at(*i).gateOf[j].end());
-			at(*i).drainOf[j].insert(at(*i).drainOf[j].end(), at(n0).drainOf[j].begin(), at(n0).drainOf[j].end());
-			sort(at(*i).drainOf[j].begin(), at(*i).drainOf[j].end());
-			at(*i).drainOf[j].erase(unique(at(*i).drainOf[j].begin(), at(*i).drainOf[j].end()), at(*i).drainOf[j].end());
-			at(*i).sourceOf[j].insert(at(*i).sourceOf[j].end(), at(n0).sourceOf[j].begin(), at(n0).sourceOf[j].end());
-			sort(at(*i).sourceOf[j].begin(), at(*i).sourceOf[j].end());
-			at(*i).sourceOf[j].erase(unique(at(*i).sourceOf[j].begin(), at(*i).sourceOf[j].end()), at(*i).sourceOf[j].end());
-			at(*i).rsourceOf[j].insert(at(*i).rsourceOf[j].end(), at(n0).rsourceOf[j].begin(), at(n0).rsourceOf[j].end());
-			sort(at(*i).rsourceOf[j].begin(), at(*i).rsourceOf[j].end());
-			at(*i).rsourceOf[j].erase(unique(at(*i).rsourceOf[j].begin(), at(*i).rsourceOf[j].end()), at(*i).rsourceOf[j].end());
+			nets[*i].gateOf[j].insert(nets[*i].gateOf[j].end(), nets[n0].gateOf[j].begin(), nets[n0].gateOf[j].end());
+			sort(nets[*i].gateOf[j].begin(), nets[*i].gateOf[j].end());
+			nets[*i].gateOf[j].erase(unique(nets[*i].gateOf[j].begin(), nets[*i].gateOf[j].end()), nets[*i].gateOf[j].end());
+			nets[*i].drainOf[j].insert(nets[*i].drainOf[j].end(), nets[n0].drainOf[j].begin(), nets[n0].drainOf[j].end());
+			sort(nets[*i].drainOf[j].begin(), nets[*i].drainOf[j].end());
+			nets[*i].drainOf[j].erase(unique(nets[*i].drainOf[j].begin(), nets[*i].drainOf[j].end()), nets[*i].drainOf[j].end());
+			nets[*i].sourceOf[j].insert(nets[*i].sourceOf[j].end(), nets[n0].sourceOf[j].begin(), nets[n0].sourceOf[j].end());
+			sort(nets[*i].sourceOf[j].begin(), nets[*i].sourceOf[j].end());
+			nets[*i].sourceOf[j].erase(unique(nets[*i].sourceOf[j].begin(), nets[*i].sourceOf[j].end()), nets[*i].sourceOf[j].end());
+			nets[*i].rsourceOf[j].insert(nets[*i].rsourceOf[j].end(), nets[n0].rsourceOf[j].begin(), nets[n0].rsourceOf[j].end());
+			sort(nets[*i].rsourceOf[j].begin(), nets[*i].rsourceOf[j].end());
+			nets[*i].rsourceOf[j].erase(unique(nets[*i].rsourceOf[j].begin(), nets[*i].rsourceOf[j].end()), nets[*i].rsourceOf[j].end());
 		}
 	}
 
-	at(n1).remote.insert(at(n1).remote.end(), at(n0).remote.begin(), at(n0).remote.end());
-	sort(at(n1).remote.begin(), at(n1).remote.end());
-	at(n1).remote.erase(unique(at(n1).remote.begin(), at(n1).remote.end()), at(n1).remote.end());
+	nets[n1].remote.insert(nets[n1].remote.end(), nets[n0].remote.begin(), nets[n0].remote.end());
+	sort(nets[n1].remote.begin(), nets[n1].remote.end());
+	nets[n1].remote.erase(unique(nets[n1].remote.begin(), nets[n1].remote.end()), nets[n1].remote.end());
 	for (int j = 0; j < 2; j++) {
-		at(n1).gateOf[j].insert(at(n1).gateOf[j].end(), at(n0).gateOf[j].begin(), at(n0).gateOf[j].end());
-		sort(at(n1).gateOf[j].begin(), at(n1).gateOf[j].end());
-		at(n1).gateOf[j].erase(unique(at(n1).gateOf[j].begin(), at(n1).gateOf[j].end()), at(n1).gateOf[j].end());
-		at(n1).drainOf[j].insert(at(n1).drainOf[j].end(), at(n0).drainOf[j].begin(), at(n0).drainOf[j].end());
-		sort(at(n1).drainOf[j].begin(), at(n1).drainOf[j].end());
-		at(n1).drainOf[j].erase(unique(at(n1).drainOf[j].begin(), at(n1).drainOf[j].end()), at(n1).drainOf[j].end());
-		at(n1).sourceOf[j].insert(at(n1).sourceOf[j].end(), at(n0).sourceOf[j].begin(), at(n0).sourceOf[j].end());
-		sort(at(n1).sourceOf[j].begin(), at(n1).sourceOf[j].end());
-		at(n1).sourceOf[j].erase(unique(at(n1).sourceOf[j].begin(), at(n1).sourceOf[j].end()), at(n1).sourceOf[j].end());
-		at(n1).rsourceOf[j].insert(at(n1).rsourceOf[j].end(), at(n0).rsourceOf[j].begin(), at(n0).rsourceOf[j].end());
-		sort(at(n1).rsourceOf[j].begin(), at(n1).rsourceOf[j].end());
-		at(n1).rsourceOf[j].erase(unique(at(n1).rsourceOf[j].begin(), at(n1).rsourceOf[j].end()), at(n1).rsourceOf[j].end());
+		nets[n1].gateOf[j].insert(nets[n1].gateOf[j].end(), nets[n0].gateOf[j].begin(), nets[n0].gateOf[j].end());
+		sort(nets[n1].gateOf[j].begin(), nets[n1].gateOf[j].end());
+		nets[n1].gateOf[j].erase(unique(nets[n1].gateOf[j].begin(), nets[n1].gateOf[j].end()), nets[n1].gateOf[j].end());
+		nets[n1].drainOf[j].insert(nets[n1].drainOf[j].end(), nets[n0].drainOf[j].begin(), nets[n0].drainOf[j].end());
+		sort(nets[n1].drainOf[j].begin(), nets[n1].drainOf[j].end());
+		nets[n1].drainOf[j].erase(unique(nets[n1].drainOf[j].begin(), nets[n1].drainOf[j].end()), nets[n1].drainOf[j].end());
+		nets[n1].sourceOf[j].insert(nets[n1].sourceOf[j].end(), nets[n0].sourceOf[j].begin(), nets[n0].sourceOf[j].end());
+		sort(nets[n1].sourceOf[j].begin(), nets[n1].sourceOf[j].end());
+		nets[n1].sourceOf[j].erase(unique(nets[n1].sourceOf[j].begin(), nets[n1].sourceOf[j].end()), nets[n1].sourceOf[j].end());
+		nets[n1].rsourceOf[j].insert(nets[n1].rsourceOf[j].end(), nets[n0].rsourceOf[j].begin(), nets[n0].rsourceOf[j].end());
+		sort(nets[n1].rsourceOf[j].begin(), nets[n1].rsourceOf[j].end());
+		nets[n1].rsourceOf[j].erase(unique(nets[n1].rsourceOf[j].begin(), nets[n1].rsourceOf[j].end()), nets[n1].rsourceOf[j].end());
 	}
 
-	if (n0 >= 0) {
-		nets.erase(nets.begin()+n0);
-		for (auto n = nets.begin(); n != nets.end(); n++) {
-			for (int i = (int)n->remote.size()-1; i >= 0; i--) {
-				if (n->remote[i] == n0) {
-					n->remote.erase(n->remote.begin()+i);
-				} else if (n->remote[i] > n0) {
-					n->remote[i]--;
-				}
+	nets.erase(nets.begin()+n0);
+	for (auto n = nets.begin(); n != nets.end(); n++) {
+		for (int i = (int)n->remote.size()-1; i >= 0; i--) {
+			if (n->remote[i] == n0) {
+				n->remote.erase(n->remote.begin()+i);
+			} else if (n->remote[i] > n0) {
+				n->remote[i]--;
 			}
 		}
-		for (auto n = nodes.begin(); n != nodes.end(); n++) {
-			for (int i = (int)n->remote.size()-1; i >= 0; i--) {
-				if (n->remote[i] == n0) {
-					n->remote.erase(n->remote.begin()+i);
-				} else if (n->remote[i] > n0) {
-					n->remote[i]--;
-				}
-			}
-		}
-		if (n0 < n1) {
-			n1--;
-		}
-	} else {
-		nodes.erase(nodes.begin()+flip(n0));
-		for (auto n = nets.begin(); n != nets.end(); n++) {
-			for (int i = (int)n->remote.size()-1; i >= 0; i--) {
-				if (n->remote[i] == n0) {
-					n->remote.erase(n->remote.begin()+i);
-				} else if (n->remote[i] < n0) {
-					n->remote[i]++;
-				}
-			}
-		}
-		for (auto n = nodes.begin(); n != nodes.end(); n++) {
-			for (int i = (int)n->remote.size()-1; i >= 0; i--) {
-				if (n->remote[i] == n0) {
-					n->remote.erase(n->remote.begin()+i);
-				} else if (n->remote[i] < n0) {
-					n->remote[i]++;
-				}
-			}
-		}
-		if (n0 > n1) {
-			n1++;
-		}
+	}
+	if (n0 < n1) {
+		n1--;
 	}
 
 	return n1;
@@ -494,19 +442,20 @@ void production_rule_set::replace(map<int, int> &lst, int from, int to) {
 }
 
 int production_rule_set::add_source(int gate, int drain, int threshold, int driver, attributes attr) {
-	create(gate);
-	create(drain);
-	int source = flip(nodes.size());
-	create(source);
+	//create(gate);
+	//create(drain);
+	//int source = nets.size();
+	//create(source);
+	int source = create();
 
-	at(source).sourceOf[driver].push_back(devs.size());
-	for (auto i = at(gate).remote.begin(); i != at(gate).remote.end(); i++) {
-		at(*i).gateOf[threshold].push_back(devs.size());
+	nets[source].sourceOf[driver].push_back(devs.size());
+	for (auto i = nets[gate].remote.begin(); i != nets[gate].remote.end(); i++) {
+		nets[*i].gateOf[threshold].push_back(devs.size());
 	}
-	for (auto i = at(drain).remote.begin(); i != at(drain).remote.end(); i++) {
-		at(*i).drainOf[driver].push_back(devs.size());
+	for (auto i = nets[drain].remote.begin(); i != nets[drain].remote.end(); i++) {
+		nets[*i].drainOf[driver].push_back(devs.size());
 		if (attr.pass) {
-			at(*i).rsourceOf[driver].push_back(devs.size());
+			nets[*i].rsourceOf[driver].push_back(devs.size());
 		}
 	}
 	devs.push_back(device(source, gate, drain, threshold, driver, attr));
@@ -514,37 +463,38 @@ int production_rule_set::add_source(int gate, int drain, int threshold, int driv
 }
 
 int production_rule_set::add_drain(int source, int gate, int threshold, int driver, attributes attr) {
-	create(gate);
-	create(source);
-	int drain = flip(nodes.size());
-	create(drain);
-	at(drain).drainOf[driver].push_back(devs.size());
-	for (auto i = at(gate).remote.begin(); i != at(gate).remote.end(); i++) {
-		at(*i).gateOf[threshold].push_back(devs.size());
+	//create(gate);
+	//create(source);
+	//int drain = nets.size();
+	//create(drain);
+	int drain = create();
+	nets[drain].drainOf[driver].push_back(devs.size());
+	for (auto i = nets[gate].remote.begin(); i != nets[gate].remote.end(); i++) {
+		nets[*i].gateOf[threshold].push_back(devs.size());
 	}
-	for (auto i = at(source).remote.begin(); i != at(source).remote.end(); i++) {
-		at(*i).sourceOf[driver].push_back(devs.size());
+	for (auto i = nets[source].remote.begin(); i != nets[source].remote.end(); i++) {
+		nets[*i].sourceOf[driver].push_back(devs.size());
 	}
 	devs.push_back(device(source, gate, drain, threshold, driver, attr));
 	return drain;
 }
 
 void production_rule_set::add_mos(int source, int gate, int drain, int threshold, int driver, attributes attr) {
-	create(gate);
-	create(source);
-	create(drain);
+	//create(gate);
+	//create(source);
+	//create(drain);
 
-	for (auto i = at(gate).remote.begin(); i != at(gate).remote.end(); i++) {
-		at(*i).gateOf[threshold].push_back(devs.size());
+	for (auto i = nets[gate].remote.begin(); i != nets[gate].remote.end(); i++) {
+		nets[*i].gateOf[threshold].push_back(devs.size());
 	}
-	for (auto i = at(drain).remote.begin(); i != at(drain).remote.end(); i++) {
-		at(*i).drainOf[driver].push_back(devs.size());
+	for (auto i = nets[drain].remote.begin(); i != nets[drain].remote.end(); i++) {
+		nets[*i].drainOf[driver].push_back(devs.size());
 		if (attr.pass) {
-			at(*i).rsourceOf[driver].push_back(devs.size());
+			nets[*i].rsourceOf[driver].push_back(devs.size());
 		}
 	}
-	for (auto i = at(source).remote.begin(); i != at(source).remote.end(); i++) {
-		at(*i).sourceOf[driver].push_back(devs.size());
+	for (auto i = nets[source].remote.begin(); i != nets[source].remote.end(); i++) {
+		nets[*i].sourceOf[driver].push_back(devs.size());
 	}
 
 	devs.push_back(device(source, gate, drain, threshold, driver, attr));
@@ -628,11 +578,11 @@ void production_rule_set::move_gate(int dev, int gate, int threshold) {
 	}
 	if (gate != prev_gate or threshold != prev_threshold) {
 		devs[dev].gate = gate;
-		for (auto i = at(prev_gate).remote.begin(); i != at(prev_gate).remote.end(); i++) {
-			at(*i).gateOf[prev_threshold].erase(find(at(*i).gateOf[prev_threshold].begin(), at(*i).gateOf[prev_threshold].end(), dev));
+		for (auto i = nets[prev_gate].remote.begin(); i != nets[prev_gate].remote.end(); i++) {
+			nets[*i].gateOf[prev_threshold].erase(find(nets[*i].gateOf[prev_threshold].begin(), nets[*i].gateOf[prev_threshold].end(), dev));
 		}
-		for (auto i = at(gate).remote.begin(); i != at(gate).remote.end(); i++) {
-			at(*i).gateOf[threshold].insert(lower_bound(at(*i).gateOf[threshold].begin(), at(*i).gateOf[threshold].end(), dev), dev);
+		for (auto i = nets[gate].remote.begin(); i != nets[gate].remote.end(); i++) {
+			nets[*i].gateOf[threshold].insert(lower_bound(nets[*i].gateOf[threshold].begin(), nets[*i].gateOf[threshold].end(), dev), dev);
 		}
 	}
 }
@@ -650,38 +600,38 @@ void production_rule_set::move_source_drain(int dev, int source, int drain, int 
 
 	if (source != prev_source or driver != prev_driver) {
 		devs[dev].source = source;
-		for (auto i = at(prev_source).remote.begin(); i != at(prev_source).remote.end(); i++) {
-			at(*i).sourceOf[prev_driver].erase(find(at(*i).sourceOf[prev_driver].begin(), at(*i).sourceOf[prev_driver].end(), dev));
+		for (auto i = nets[prev_source].remote.begin(); i != nets[prev_source].remote.end(); i++) {
+			nets[*i].sourceOf[prev_driver].erase(find(nets[*i].sourceOf[prev_driver].begin(), nets[*i].sourceOf[prev_driver].end(), dev));
 		}
-		for (auto i = at(source).remote.begin(); i != at(source).remote.end(); i++) {
-			at(*i).sourceOf[driver].insert(lower_bound(at(*i).sourceOf[driver].begin(), at(*i).sourceOf[driver].end(), dev), dev);
+		for (auto i = nets[source].remote.begin(); i != nets[source].remote.end(); i++) {
+			nets[*i].sourceOf[driver].insert(lower_bound(nets[*i].sourceOf[driver].begin(), nets[*i].sourceOf[driver].end(), dev), dev);
 		}
 	}
 
 	if (drain != prev_drain or driver != prev_driver) {
 		devs[dev].drain = drain;
-		for (auto i = at(prev_drain).remote.begin(); i != at(prev_drain).remote.end(); i++) {
-			at(*i).drainOf[prev_driver].erase(find(at(*i).drainOf[prev_driver].begin(), at(*i).drainOf[prev_driver].end(), dev));
+		for (auto i = nets[prev_drain].remote.begin(); i != nets[prev_drain].remote.end(); i++) {
+			nets[*i].drainOf[prev_driver].erase(find(nets[*i].drainOf[prev_driver].begin(), nets[*i].drainOf[prev_driver].end(), dev));
 		}
-		for (auto i = at(drain).remote.begin(); i != at(drain).remote.end(); i++) {
-			at(*i).drainOf[driver].insert(lower_bound(at(*i).drainOf[driver].begin(), at(*i).drainOf[driver].end(), dev), dev);
+		for (auto i = nets[drain].remote.begin(); i != nets[drain].remote.end(); i++) {
+			nets[*i].drainOf[driver].insert(lower_bound(nets[*i].drainOf[driver].begin(), nets[*i].drainOf[driver].end(), dev), dev);
 		}
 	}
 }
 
 void production_rule_set::invert(int net) {
 	for (int threshold = 0; threshold < 2; threshold++) {
-		for (auto i = at(net).gateOf[threshold].begin(); i != at(net).gateOf[threshold].end(); i++) {
+		for (auto i = nets[net].gateOf[threshold].begin(); i != nets[net].gateOf[threshold].end(); i++) {
 			devs[*i].threshold = 1-devs[*i].threshold;
 		}
 	}
-	for (auto i = at(net).remote.begin(); i != at(net).remote.end(); i++) {
-		std::swap(at(*i).gateOf[0], at(*i).gateOf[1]);
+	for (auto i = nets[net].remote.begin(); i != nets[net].remote.end(); i++) {
+		std::swap(nets[*i].gateOf[0], nets[*i].gateOf[1]);
 	}
 	
 	vector<int> stack;
-	stack.insert(stack.end(), at(net).drainOf[0].begin(), at(net).drainOf[0].end());
-	stack.insert(stack.end(), at(net).drainOf[1].begin(), at(net).drainOf[1].end());
+	stack.insert(stack.end(), nets[net].drainOf[0].begin(), nets[net].drainOf[0].end());
+	stack.insert(stack.end(), nets[net].drainOf[1].begin(), nets[net].drainOf[1].end());
 	sort(stack.begin(), stack.end());
 	stack.erase(unique(stack.begin(), stack.end()), stack.end());
 	while (not stack.empty()) {
@@ -690,14 +640,14 @@ void production_rule_set::invert(int net) {
 		stack.pop_back();
 
 		int new_source = dev->source;
-		if (at(dev->source).driver >= 0) {
-			new_source = at(dev->source).mirror;
-		//} else if (not at(dev->source).gateOf.empty()) {
+		if (nets[dev->source].driver >= 0) {
+			new_source = nets[dev->source].mirror;
+		//} else if (not nets[dev->source].gateOf.empty()) {
 		//	TODO(edward.bingham) What happens for bubble reshuffling pass
 		//	transistor logic?
-		} else if (at(dev->source).gateOf[0].empty() and at(dev->source).gateOf[1].empty()) {
-			stack.insert(stack.end(), at(dev->source).drainOf[0].begin(), at(dev->source).drainOf[0].end());
-			stack.insert(stack.end(), at(dev->source).drainOf[1].begin(), at(dev->source).drainOf[1].end());
+		} else if (nets[dev->source].gateOf[0].empty() and nets[dev->source].gateOf[1].empty()) {
+			stack.insert(stack.end(), nets[dev->source].drainOf[0].begin(), nets[dev->source].drainOf[0].end());
+			stack.insert(stack.end(), nets[dev->source].drainOf[1].begin(), nets[dev->source].drainOf[1].end());
 			sort(stack.begin(), stack.end());
 			stack.erase(unique(stack.begin(), stack.end()), stack.end());
 		}
@@ -729,28 +679,28 @@ boolean::cover production_rule_set::guard_of(int net, int driver, bool weak) {
 		stack.pop_back();
 
 		if ((curr.net != net
-			and (not at(curr.net).gateOf[0].empty()
-				or not at(curr.net).gateOf[1].empty()))
-			or at(curr.net).driver >= 0) {
+			and (not nets[curr.net].gateOf[0].empty()
+				or not nets[curr.net].gateOf[1].empty()))
+			or nets[curr.net].driver >= 0) {
 			if (curr.net == net) {
 				continue;
 			}
 
-			if (at(curr.net).driver < 0) {
-				curr.guard.set(uid(curr.net), driver);
+			if (nets[curr.net].driver < 0) {
+				curr.guard.set(curr.net, driver);
 			}
 
 			result |= curr.guard;
 			continue;
 		}
 
-		for (auto i = at(curr.net).drainOf[driver].begin(); i != at(curr.net).drainOf[driver].end(); i++) {
+		for (auto i = nets[curr.net].drainOf[driver].begin(); i != nets[curr.net].drainOf[driver].end(); i++) {
 			auto dev = devs.begin()+*i;
 			if (dev->drain != curr.net or dev->driver != driver or dev->attr.weak != weak) {
 				continue;
 			}
 			boolean::cube guard = curr.guard;
-			guard.set(uid(dev->gate), dev->threshold);
+			guard.set(dev->gate, dev->threshold);
 			stack.push_back({dev->source, guard});
 		}
 	}
@@ -761,12 +711,12 @@ boolean::cover production_rule_set::guard_of(int net, int driver, bool weak) {
 bool production_rule_set::has_inverter_after(int net, int &_net) {
 	array<vector<int>, 2> unary;
 	for (int i = 0; i < 2; i++) {
-		for (auto j = at(net).gateOf[i].begin(); j != at(net).gateOf[i].end(); j++) {
+		for (auto j = nets[net].gateOf[i].begin(); j != nets[net].gateOf[i].end(); j++) {
 			auto dev = devs.begin()+*j;
 			if (dev->gate != net) {
 				continue;
 			}
-			if (at(dev->source).driver == 1-dev->threshold) {
+			if (nets[dev->source].driver == 1-dev->threshold) {
 				unary[i].push_back(*j);
 			}
 		}
@@ -782,7 +732,7 @@ bool production_rule_set::has_inverter_after(int net, int &_net) {
 			boolean::cover up = guard_of(n, 1);
 			boolean::cover dn = guard_of(n, 0);
 
-			if (up == boolean::cover(uid(net), 0) and dn == boolean::cover(uid(net), 1)) {
+			if (up == boolean::cover(net, 0) and dn == boolean::cover(net, 1)) {
 				_net = n;
 				return true;
 			}
@@ -804,35 +754,38 @@ void production_rule_set::add_inverter_between(int from, int to, attributes attr
 }
 
 int production_rule_set::add_inverter_after(int net, attributes attr, int vdd, int gnd) {
-	int _net = flip(nodes.size());
-	create(_net);
+	int _net = create();
+	//int _net = nets.size();
+	//create(_net);
 	add_inverter_between(net, _net, attr, vdd, gnd);
 	return _net;
 }
 
 array<int, 2> production_rule_set::add_buffer_before(int net, attributes attr, int vdd, int gnd) {
-	int __net = flip(nodes.size());
-	create(__net);
+	//int __net = nets.size();
+	//create(__net);
+	int __net = create();
 	for (int i = 0; i < 2; i++) {
-		at(__net).drainOf[i] = at(net).drainOf[i];
-		at(net).drainOf[i].clear();
+		nets[__net].drainOf[i] = nets[net].drainOf[i];
+		nets[net].drainOf[i].clear();
 	}
 	for (int i = 0; i < 2; i++) {
-		for (auto j = at(__net).drainOf[i].begin(); j != at(__net).drainOf[i].end(); j++) {
+		for (auto j = nets[__net].drainOf[i].begin(); j != nets[__net].drainOf[i].end(); j++) {
 			if (devs[*j].drain == net) {
 				devs[*j].drain = __net;
 			}
 		}
 	}
 
-	int _net = flip(nodes.size());
-	create(_net);
+	//int _net = nets.size();
+	//create(_net);
+	int _net = create();
 	add_inverter_between(__net, _net, attr, vdd, gnd);
 	add_inverter_between(_net, net, attr, vdd, gnd);
 	return {__net, _net};
 }
 
-void production_rule_set::add_keepers(ucs::variable_set &v, bool share, bool hcta, boolean::cover keep, bool report_progress) {
+void production_rule_set::add_keepers(bool share, bool hcta, boolean::cover keep, bool report_progress) {
 	if (report_progress) {
 		printf("  %s...", name.c_str());
 		fflush(stdout);
@@ -846,8 +799,8 @@ void production_rule_set::add_keepers(ucs::variable_set &v, bool share, bool hct
 		std::numeric_limits<int>::max(),
 		std::numeric_limits<int>::max()
 	};
-	for (int net = -(int)nodes.size(); net < (int)nets.size(); net++) {
-		if (not at(net).keep) {
+	for (int net = 0; net < (int)nets.size(); net++) {
+		if (not nets[net].keep) {
 			continue;
 		}
 
@@ -867,8 +820,8 @@ void production_rule_set::add_keepers(ucs::variable_set &v, bool share, bool hct
 			cout << "covered: " << (up|dn|keep_up|keep_dn) << endl;
 		}
 
-		at(net).keep = false;
-		if (at(net).driver >= 0 or keep.is_subset_of(up|dn|keep_up|keep_dn)) {
+		nets[net].keep = false;
+		if (nets[net].driver >= 0 or keep.is_subset_of(up|dn|keep_up|keep_dn)) {
 			if (debug) cout << "not needed" << endl << endl;
 			continue;
 		}
@@ -898,16 +851,11 @@ void production_rule_set::add_keepers(ucs::variable_set &v, bool share, bool hct
 				// If we're sharing the weak power signals across multiple cells, then
 				// we need to make them named nets so that we can put them in the IO
 				// ports.
-				ucs::variable weakgnd = v.nodes[pwr[0][0]];
-				weakgnd.name.back().name = "weak_" + weakgnd.name.back().name;
-				ucs::variable weakvdd = v.nodes[pwr[0][1]];
-				weakvdd.name.back().name = "weak_" + weakvdd.name.back().name;
-
-				weakpwr[0] = v.define(weakgnd);
-				weakpwr[1] = v.define(weakvdd);
+				weakpwr[0] = create("weak_" + nets[pwr[0][0]].name);
+				weakpwr[1] = create("weak_" + nets[pwr[0][1]].name);
 			} else {
-				weakpwr[0] = flip(nodes.size());
-				weakpwr[1] = flip(nodes.size());
+				weakpwr[0] = create();
+				weakpwr[1] = create();
 			}
 
 			add_mos(pwr[0][0], pwr[0][1], weakpwr[0], 1, 0, attributes(true, false));
@@ -964,14 +912,14 @@ vector<bool> production_rule_set::identify_weak_drivers() {
 
 		// Propagate only if all sources of this net for this value are weak
 		bool found = false;
-		for (auto i = at(curr.net).drainOf[curr.val].begin(); i != at(curr.net).drainOf[curr.val].end() and not found; i++) {
+		for (auto i = nets[curr.net].drainOf[curr.val].begin(); i != nets[curr.net].drainOf[curr.val].end() and not found; i++) {
 			found = not weak[*i];
 		}
 		if (found) {
 			continue;
 		}
 
-		for (auto i = at(curr.net).sourceOf[curr.val].begin(); i != at(curr.net).sourceOf[curr.val].end(); i++) {
+		for (auto i = nets[curr.net].sourceOf[curr.val].begin(); i != nets[curr.net].sourceOf[curr.val].end(); i++) {
 			if (not weak[*i]) {
 				weak[*i] = true;
 				frames.push_back({devs[*i].drain, curr.val});
@@ -989,9 +937,9 @@ vector<vector<int> > production_rule_set::size_with_stack_length() {
 		vector<int> devs;
 	};
 	vector<frame> frames;
-	for (int i = -(int)nodes.size(); i < (int)nets.size(); i++) {
+	for (int i = 0; i < (int)nets.size(); i++) {
 		for (int val = 0; val < 2; val++) {
-			if (not at(i).drainOf[1-val].empty() and not at(i).drainOf[val].empty()) {
+			if (not nets[i].drainOf[1-val].empty() and not nets[i].drainOf[val].empty()) {
 				frames.push_back({i, val, vector<int>()});
 			}
 		}
@@ -1006,7 +954,7 @@ vector<vector<int> > production_rule_set::size_with_stack_length() {
 		frame curr = frames.back();
 		frames.pop_back();
 
-		if (at(curr.net).drainOf[curr.val].empty()) {
+		if (nets[curr.net].drainOf[curr.val].empty()) {
 			// TODO(edward.bingham) throw error if this node is not a driver (outside
 			// node feeding into pass transistor logic is not acceptable). Assume
 			// driving stack is four transistors long plus length of current stack,
@@ -1026,7 +974,7 @@ vector<vector<int> > production_rule_set::size_with_stack_length() {
 			continue;
 		}
 
-		for (auto i = at(curr.net).drainOf[curr.val].begin(); i != at(curr.net).drainOf[curr.val].end(); i++) {
+		for (auto i = nets[curr.net].drainOf[curr.val].begin(); i != nets[curr.net].drainOf[curr.val].end(); i++) {
 			bool found = false;
 			for (int j = (int)curr.devs.size()-1; j >= 0 and not found; j--) {
 				found = curr.devs[j] == *i;
@@ -1180,18 +1128,18 @@ void production_rule_set::swap_source_drain(int dev) {
 	devs[dev].source = prev_drain;
 	devs[dev].drain = prev_source;
 
-	for (auto i = at(prev_source).remote.begin(); i != at(prev_source).remote.end(); i++) {
-		at(*i).sourceOf[driver].erase(find(at(*i).sourceOf[driver].begin(), at(*i).sourceOf[driver].end(), dev));
+	for (auto i = nets[prev_source].remote.begin(); i != nets[prev_source].remote.end(); i++) {
+		nets[*i].sourceOf[driver].erase(find(nets[*i].sourceOf[driver].begin(), nets[*i].sourceOf[driver].end(), dev));
 	}
-	for (auto i = at(devs[dev].source).remote.begin(); i != at(devs[dev].source).remote.end(); i++) {
-		at(*i).sourceOf[driver].insert(lower_bound(at(*i).sourceOf[driver].begin(), at(*i).sourceOf[driver].end(), dev), dev);
+	for (auto i = nets[devs[dev].source].remote.begin(); i != nets[devs[dev].source].remote.end(); i++) {
+		nets[*i].sourceOf[driver].insert(lower_bound(nets[*i].sourceOf[driver].begin(), nets[*i].sourceOf[driver].end(), dev), dev);
 	}
 
-	for (auto i = at(prev_drain).remote.begin(); i != at(prev_drain).remote.end(); i++) {
-		at(*i).drainOf[driver].erase(find(at(*i).drainOf[driver].begin(), at(*i).drainOf[driver].end(), dev));
+	for (auto i = nets[prev_drain].remote.begin(); i != nets[prev_drain].remote.end(); i++) {
+		nets[*i].drainOf[driver].erase(find(nets[*i].drainOf[driver].begin(), nets[*i].drainOf[driver].end(), dev));
 	}
-	for (auto i = at(devs[dev].drain).remote.begin(); i != at(devs[dev].drain).remote.end(); i++) {
-		at(*i).drainOf[driver].insert(lower_bound(at(*i).drainOf[driver].begin(), at(*i).drainOf[driver].end(), dev), dev);
+	for (auto i = nets[devs[dev].drain].remote.begin(); i != nets[devs[dev].drain].remote.end(); i++) {
+		nets[*i].drainOf[driver].insert(lower_bound(nets[*i].drainOf[driver].begin(), nets[*i].drainOf[driver].end(), dev), dev);
 	}
 }
 
@@ -1220,20 +1168,20 @@ void production_rule_set::normalize_source_drain() {
 		frames.pop_front();
 		visited.insert({curr.net, curr.val});
 
-		vector<int> drains = at(curr.net).drainOf[curr.val];
+		vector<int> drains = nets[curr.net].drainOf[curr.val];
 		for (auto i = drains.begin(); i != drains.end(); i++) {
-			if (seen.find(*i) == seen.end() and find(at(curr.net).remote.begin(), at(curr.net).remote.end(), devs[*i].drain) != at(curr.net).remote.end()) {
+			if (seen.find(*i) == seen.end() and find(nets[curr.net].remote.begin(), nets[curr.net].remote.end(), devs[*i].drain) != nets[curr.net].remote.end()) {
 				swap_source_drain(*i);
 			}
 		}
 
-		for (auto i = at(curr.net).sourceOf[curr.val].begin(); i != at(curr.net).sourceOf[curr.val].end(); i++) {
+		for (auto i = nets[curr.net].sourceOf[curr.val].begin(); i != nets[curr.net].sourceOf[curr.val].end(); i++) {
 			if (seen.find(*i) == seen.end()) {
-				if (not at(devs[*i].drain).isIO
-					and at(devs[*i].drain).gateOf[0].empty()
-					and at(devs[*i].drain).gateOf[1].empty()
-					and at(devs[*i].drain).drainOf[1-curr.val].empty()
-					and at(devs[*i].drain).sourceOf[1-curr.val].empty()) {
+				if (not nets[devs[*i].drain].isIO
+					and nets[devs[*i].drain].gateOf[0].empty()
+					and nets[devs[*i].drain].gateOf[1].empty()
+					and nets[devs[*i].drain].drainOf[1-curr.val].empty()
+					and nets[devs[*i].drain].sourceOf[1-curr.val].empty()) {
 					devs[*i].attr.set_internal();
 					frames.push_back({devs[*i].drain, curr.val});
 				}
@@ -1261,20 +1209,20 @@ void production_rule_set::normalize_source_drain() {
 		frames.pop_front();
 		visited.insert({curr.net, curr.val});
 
-		vector<int> sources = at(curr.net).sourceOf[curr.val];
+		vector<int> sources = nets[curr.net].sourceOf[curr.val];
 		for (auto i = sources.begin(); i != sources.end(); i++) {
-			if (seen.find(*i) == seen.end() and find(at(curr.net).remote.begin(), at(curr.net).remote.end(), devs[*i].drain) != at(curr.net).remote.end()) {
+			if (seen.find(*i) == seen.end() and find(nets[curr.net].remote.begin(), nets[curr.net].remote.end(), devs[*i].drain) != nets[curr.net].remote.end()) {
 				swap_source_drain(*i);
 			}
 		}
 
-		for (auto i = at(curr.net).drainOf[curr.val].begin(); i != at(curr.net).drainOf[curr.val].end(); i++) {
+		for (auto i = nets[curr.net].drainOf[curr.val].begin(); i != nets[curr.net].drainOf[curr.val].end(); i++) {
 			if (seen.find(*i) == seen.end()) {
-				if (not at(devs[*i].drain).isIO
-					and at(devs[*i].drain).gateOf[0].empty()
-					and at(devs[*i].drain).gateOf[1].empty()
-					and at(devs[*i].drain).drainOf[1-curr.val].empty()
-					and at(devs[*i].drain).sourceOf[1-curr.val].empty()) {
+				if (not nets[devs[*i].drain].isIO
+					and nets[devs[*i].drain].gateOf[0].empty()
+					and nets[devs[*i].drain].gateOf[1].empty()
+					and nets[devs[*i].drain].drainOf[1-curr.val].empty()
+					and nets[devs[*i].drain].sourceOf[1-curr.val].empty()) {
 					devs[*i].attr.set_internal();
 				}
 				frames.push_back({devs[*i].source, curr.val});

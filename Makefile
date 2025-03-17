@@ -1,19 +1,25 @@
 NAME          = prs
-DEPEND        = sch phy boolean common parse parse_expression parse_ucs interpret_ucs ucs interpret_boolean parse_dot
+DEPEND        = sch phy boolean interpret_boolean parse_expression parse_ucs parse common
+TEST_DEPEND   = interpret_prs prs interpret_boolean parse_prs parse_spice parse_dot parse_expression parse_ucs parse sch phy boolean ucs common
+
+CXXFLAGS      = -std=c++17 -O2 -g -Wall -fmessage-length=0
+LDFLAGS       =  
 
 SRCDIR        = $(NAME)
-TESTDIR       = tests
-GTEST        := ../../googletest
-GTEST_I      := -I$(GTEST)/googletest/include -I.
-GTEST_L      := -L$(GTEST)/build/lib -L.
-
-CXXFLAGS      = -std=c++17 -O2 -g -Wall -fmessage-length=0 $(DEPEND:%=-I../%) -I.
-LDFLAGS       =  
+INCLUDE_PATHS = $(DEPEND:%=-I../%) -I.
+LIBRARY_PATHS =
+LIBRARIES     =
 
 SOURCES	     := $(shell mkdir -p $(SRCDIR); find $(SRCDIR) -name '*.cpp')
 OBJECTS	     := $(SOURCES:%.cpp=build/%.o)
 DEPS         := $(shell mkdir -p build/$(SRCDIR); find build/$(SRCDIR) -name '*.d')
 TARGET        = lib$(NAME).a
+
+TESTDIR       = tests
+GTEST        := ../../googletest
+TEST_INCLUDE_PATHS = -I$(GTEST)/googletest/include $(TEST_DEPEND:%=-I../%) -I.
+TEST_LIBRARY_PATHS = -L$(GTEST)/build/lib $(TEST_DEPEND:%=-L../%) -L.
+TEST_LIBRARIES = $(TEST_DEPEND:%=-l%) -pthread -lgtest
 
 TESTS        := $(shell mkdir -p $(TESTDIR); find $(TESTDIR) -name '*.cpp')
 TEST_OBJECTS := $(TESTS:%.cpp=build/%.o) build/$(TESTDIR)/gtest_main.o
@@ -64,22 +70,25 @@ $(TARGET): $(OBJECTS)
 
 build/$(SRCDIR)/%.o: $(SRCDIR)/%.cpp 
 	@mkdir -p $(dir $@)
-	@$(CXX) $(CXXFLAGS) $(LDFLAGS) -MM -MF $(patsubst %.o,%.d,$@) -MT $@ -c $<
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) -c -o $@ $<
+	@$(CXX) $(CXXFLAGS) $(LDFLAGS) $(INCLUDE_PATHS) -MM -MF $(patsubst %.o,%.d,$@) -MT $@ -c $<
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(INCLUDE_PATHS) -c -o $@ $<
 
-$(TEST_TARGET): $(TEST_OBJECTS)
-	$(CXX) $(CXXFLAGS) $(GTEST_L) $^ -pthread -l$(NAME) -lgtest -o $(TEST_TARGET)
+$(TEST_TARGET): $(TEST_OBJECTS) $(OBJECTS) $(TARGET)
+	$(CXX) $(CXXFLAGS) $(TEST_LIBRARY_PATHS) $(TEST_OBJECTS) $(TEST_LIBRARIES) -o $(TEST_TARGET)
 
 build/$(TESTDIR)/%.o: $(TESTDIR)/%.cpp
 	@mkdir -p $(dir $@)
-	@$(CXX) $(CXXFLAGS) $(GTEST_I) -MM -MF $(patsubst %.o,%.d,$@) -MT $@ -c $<
-	$(CXX) $(CXXFLAGS) $(GTEST_I) $< -c -o $@
+	@$(CXX) $(CXXFLAGS) $(TEST_INCLUDE_PATHS) -MM -MF $(patsubst %.o,%.d,$@) -MT $@ -c $<
+	$(CXX) $(CXXFLAGS) $(TEST_INCLUDE_PATHS) $< -c -o $@
 
 build/$(TESTDIR)/gtest_main.o: $(GTEST)/googletest/src/gtest_main.cc
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(GTEST_I) $< -c -o $@
+	$(CXX) $(CXXFLAGS) $(TEST_INCLUDE_PATHS) $< -c -o $@
 
 include $(DEPS) $(TEST_DEPS)
 
 clean:
 	rm -rf build $(TARGET) $(TEST_TARGET)
+
+cleantest:
+	rm -rf build/$(TESTDIR) $(TEST_TARGET)

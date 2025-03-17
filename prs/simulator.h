@@ -2,7 +2,6 @@
 
 #include "calendar_queue.h"
 #include "production_rule.h"
-#include <ucs/variable.h>
 #include <common/standard.h>
 
 namespace prs {
@@ -21,7 +20,7 @@ struct enabled_transition {
 	int strength;
 	bool stable;
 
-	string to_string(const ucs::variable_set &v);
+	string to_string(const production_rule_set *base);
 };
 
 struct enabled_priority {
@@ -35,7 +34,7 @@ bool operator>(enabled_transition t0, enabled_transition t1);
 
 struct simulator {
 	simulator();
-	simulator(const production_rule_set *base, const ucs::variable_set *variables, bool debug=false);
+	simulator(const production_rule_set *base, bool debug=false);
 	~simulator();
 
 	using queue=calendar_queue<enabled_transition, enabled_priority>;
@@ -43,7 +42,6 @@ struct simulator {
 	bool debug;
 
 	const production_rule_set *base;
-	const ucs::variable_set *variables;
 
 	// 2 = undriven or unknown
 	// 1 = stable one
@@ -63,7 +61,6 @@ struct simulator {
 
 	// indexed by device, points to events in the enabled queue.
 	vector<queue::event*> nets;
-	vector<queue::event*> nodes;
 
 	queue::event* &at(int net);
 
