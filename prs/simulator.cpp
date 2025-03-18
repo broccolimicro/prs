@@ -349,16 +349,17 @@ void simulator::evaluate(deque<int> nets) {
 
 enabled_transition simulator::fire(int net) {
 	enabled_transition t;
-	if (net < 0 or net >= (int)nets.size() or nets[net] == nullptr) {
+	if (net == std::numeric_limits<int>::max()) {
+		t = enabled.pop();
+	} else if (net < 0 or net >= (int)nets.size()) {
 		printf("error: attempting to fire transition on non-existent net\n");
 		return t;
-	} else if (net >= (int)nets.size()) {
-		t = enabled.pop();
-	} else if (at(net) != nullptr) {
+	} else if (nets[net] == nullptr) {
+		printf("error: no transition to fire on this net\n");
+		return t;
+	} else {
 		t = enabled.pop(at(net));
 		at(net) = nullptr;
-	} else {
-		return t;
 	}
 
 	if (t.net < 0 or t.net >= (int)nets.size()) {

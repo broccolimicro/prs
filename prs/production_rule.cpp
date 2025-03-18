@@ -117,12 +117,17 @@ production_rule_set::~production_rule_set() {
 void production_rule_set::print() {
 	cout << "nets " << nets.size() << endl;
 	for (int i = 0; i < (int)nets.size(); i++) {
-		cout << "net " << i << ": " << nets[i].name << " gateOf=" << to_string(nets[i].gateOf[0]) << to_string(nets[i].gateOf[1]) << " sourceOf=" << to_string(nets[i].sourceOf[0]) << to_string(nets[i].sourceOf[1]) << " drainOf=" << to_string(nets[i].drainOf[0]) << to_string(nets[i].drainOf[1]) << " remote=" << to_string(nets[i].remote) << (nets[i].keep ? " keep" : "") << endl;
+		cout << "net " << i << ": " << nets[i].name << "'" << nets[i].region << " gateOf=" << to_string(nets[i].gateOf[0]) << to_string(nets[i].gateOf[1]) << " sourceOf=" << to_string(nets[i].sourceOf[0]) << to_string(nets[i].sourceOf[1]) << " drainOf=" << to_string(nets[i].drainOf[0]) << to_string(nets[i].drainOf[1]) << " remote=" << to_string(nets[i].remote) << (nets[i].keep ? " keep" : "") << (nets[i].isIO ? " io" : "") << " mirror=" << nets[i].mirror << " driver=" << nets[i].driver << endl;
 	}
 
 	cout << "devs " << devs.size() << endl;
 	for (int i = 0; i < (int)devs.size(); i++) {
-		cout << "dev " << i << ": source=" << nets[devs[i].source].name << "(" << devs[i].source << ") gate=" << nets[devs[i].gate].name << "(" << devs[i].gate << ") drain=" << nets[devs[i].drain].name << "(" << devs[i].drain << ") threshold=" << devs[i].threshold << " driver=" << devs[i].driver << (not devs[i].attr.assume.is_tautology() ? " {" + export_expression(devs[i].attr.assume, *this).to_string() + "}" : "") << (devs[i].attr.weak ? " weak" : "") << (devs[i].attr.pass ? " pass" : "") << endl;
+		cout << "dev " << i << ": source=" << nets[devs[i].source].name << "(" << devs[i].source << ") gate=" << nets[devs[i].gate].name << "(" << devs[i].gate << ") drain=" << nets[devs[i].drain].name << "(" << devs[i].drain << ") threshold=" << devs[i].threshold << " driver=" << devs[i].driver << (not devs[i].attr.assume.is_tautology() ? " {" + export_expression(devs[i].attr.assume, *this).to_string() + "}" : "") << (devs[i].attr.weak ? " weak" : "") << (devs[i].attr.force ? " force" : "") << (devs[i].attr.pass ? " pass" : "") << " after=" << devs[i].attr.delay_max << " size=" << devs[i].attr.size << " variant=" << devs[i].attr.variant << endl;
+	}
+
+	cout << "power " << pwr.size() << endl;
+	for (int i = 0; i < (int)pwr.size(); i++) {
+		cout << "pwr " << i << ": " << nets[pwr[i][0]].name << "(" << pwr[i][0] << ") " << nets[pwr[i][1]].name << "(" << pwr[i][1] << ")" << endl;
 	}
 }
 
@@ -254,9 +259,11 @@ void production_rule_set::set_power(int vdd, int gnd) {
 	nets[vdd].keep = true;
 	nets[vdd].driver = 1;
 	nets[vdd].mirror = gnd;
+	nets[vdd].isIO = true;
 	nets[gnd].keep = true;
 	nets[gnd].driver = 0;
 	nets[gnd].mirror = vdd;
+	nets[gnd].isIO = true;
 	pwr.push_back({gnd, vdd});
 }
 

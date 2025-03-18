@@ -163,8 +163,7 @@ production_rule_set extract_rules(const phy::Tech &tech, const sch::Subckt &ckt)
 	// Each net in the circuit gets a corresponding net in the PRS
 	map<int, int> netmap;
 	for (int i = 0; i < (int)ckt.nets.size(); i++) {
-		int uid = result.nets.size();
-		result.create(uid);
+		int uid = result.create(prs::net(ckt.nets[i].name));
 		if (ckt.nets[i].remoteIO) {
 			result.nets[uid].isIO = true;
 		}
@@ -252,6 +251,12 @@ production_rule_set extract_rules(const phy::Tech &tech, const sch::Subckt &ckt)
 	// Normalize source and drain connections for consistency
 	// This ensures that the PRS follows standard conventions
 	result.normalize_source_drain();
+
+	for (auto dev = result.devs.begin(); dev != result.devs.end(); dev++) {
+		if (result.nets[dev->drain].isNode()) {
+			dev->attr.delay_max = 0;
+		}
+	}
 
 	return result;
 }
