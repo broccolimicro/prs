@@ -125,7 +125,7 @@ a->b- [after=100]
     int gnd = prs.create(net("gnd"));
     prs.set_power(vdd, gnd);
     
-    simulator sim(&prs, true); // Debug mode enabled
+    simulator sim(&prs);
     
     // Find the indices of 'a' and 'b' nets
     int a_idx = -1;

@@ -399,9 +399,19 @@ void production_rule_set::set_power(int vdd, int gnd) {
 
 // Creates a remote connection between two nets
 //
-// Remote connections indicate that nets are electrically connected
-// by a long wire. This function ensures that both nets reference
-// each other in their remote lists.
+// Remote connections model wires that span across isochronic regions in an asynchronous circuit.
+// Unlike physical connections (created with connect()), remote connections:
+// 1. Maintain separate net identities while sharing electrical properties
+// 2. Model delay and timing assumptions between different parts of the circuit
+// 3. Allow for isochronic fork analysis and timing verification
+//
+// When nets are connected remotely, they share all device connection information
+// (gate, source, drain references) but can have different timing properties.
+// This is crucial for modeling quasi-delay-insensitive (QDI) circuits where
+// timing assumptions must be explicitly captured.
+//
+// The remote lists track all nets that are connected remotely, and operations
+// on one net are reflected across all its remote connections.
 //
 // @param n0 Index of the first net
 // @param n1 Index of the second net
@@ -613,6 +623,18 @@ void production_rule_set::replace(map<int, int> &lst, int from, int to) {
 	}
 }
 
+// Creates a new transistor with a specified gate and drain, but creates a new source net
+//
+// This function creates a new net to be used as the source of a transistor,
+// then creates the transistor with the specified parameters and connects it
+// to the appropriate nets in the circuit.
+//
+// @param gate Index of the net to connect to the gate terminal
+// @param drain Index of the net to connect to the drain terminal
+// @param threshold Threshold value that turns the transistor on (1 for NMOS, 0 for PMOS)
+// @param driver Driver value for the transistor (0 for NMOS, 1 for PMOS)
+// @param attr Attributes for the created device
+// @return Index of the newly created source net
 int production_rule_set::add_source(int gate, int drain, int threshold, int driver, attributes attr) {
 	//create(gate);
 	//create(drain);
@@ -634,6 +656,18 @@ int production_rule_set::add_source(int gate, int drain, int threshold, int driv
 	return source;
 }
 
+// Creates a new transistor with a specified source and gate, but creates a new drain net
+//
+// This function creates a new net to be used as the drain of a transistor,
+// then creates the transistor with the specified parameters and connects it
+// to the appropriate nets in the circuit.
+//
+// @param source Index of the net to connect to the source terminal
+// @param gate Index of the net to connect to the gate terminal
+// @param threshold Threshold value that turns the transistor on (1 for NMOS, 0 for PMOS)
+// @param driver Driver value for the transistor (0 for NMOS, 1 for PMOS)
+// @param attr Attributes for the created device
+// @return Index of the newly created drain net
 int production_rule_set::add_drain(int source, int gate, int threshold, int driver, attributes attr) {
 	//create(gate);
 	//create(source);
@@ -651,6 +685,18 @@ int production_rule_set::add_drain(int source, int gate, int threshold, int driv
 	return drain;
 }
 
+// Creates a transistor with specified source, gate, and drain nets
+//
+// This function creates a transistor with the specified terminal connections
+// and updates all the relevant data structures to maintain the circuit.
+// Unlike add_source and add_drain, this function uses existing nets for all terminals.
+//
+// @param source Index of the net to connect to the source terminal
+// @param gate Index of the net to connect to the gate terminal
+// @param drain Index of the net to connect to the drain terminal
+// @param threshold Threshold value that turns the transistor on (1 for NMOS, 0 for PMOS)
+// @param driver Driver value for the transistor (0 for NMOS, 1 for PMOS)
+// @param attr Attributes for the created device
 void production_rule_set::add_mos(int source, int gate, int drain, int threshold, int driver, attributes attr) {
 	//create(gate);
 	//create(source);
@@ -708,9 +754,23 @@ int production_rule_set::add(boolean::cube guard, int drain, int driver, attribu
 // Implements a boolean cover with hierarchical factoring
 //
 // Creates a circuit implementing a boolean cover (sum of products) expression
-// using hierarchical factoring to optimize the implementation. Common terms
-// are factored out and implemented once, and remaining terms are partitioned
-// into left and right subexpressions.
+// using hierarchical factoring to optimize the implementation. This algorithm 
+// systematically extracts common terms and divides complex expressions into
+// simpler subexpressions, resulting in a more efficient circuit with fewer transistors.
+//
+// The hierarchical factoring algorithm works as follows:
+// 1. If the expression is null (empty), return an invalid drain (indicating no implementation)
+// 2. If the expression has only one cube (product term), implement it directly using add()
+// 3. Otherwise, extract common terms across all product terms (supercube factoring):
+//    a. Create a transistor chain for the common terms
+//    b. Cofactor the remaining expression by the common terms
+// 4. Recursively divide the remaining expression into left and right subexpressions:
+//    a. Implement each subexpression independently
+//    b. Connect the outputs of both implementations to a common drain
+//
+// This factoring approach minimizes circuit area by reducing the number of 
+// transistors needed and optimizing the logical structure of the implementation.
+// It's particularly effective for complex boolean expressions with shared terms.
 //
 // @param guard Boolean cover to implement
 // @param drain Index of the drain net to drive
@@ -860,6 +920,17 @@ void production_rule_set::move_source_drain(int dev, int source, int drain, int 
 	}
 }
 
+// Inverts the logical polarity of a net in the circuit
+//
+// This function inverts the logical interpretation of a net by:
+// 1. Inverting thresholds of all connected gate inputs
+// 2. Swapping the gate reference lists for high/low thresholds
+// 3. Recursively modifying affected transistors to maintain circuit functionality 
+// 4. Adjusting driver values and source connections as needed
+//
+// This is useful for bubble reshuffling optimization and logical transformations.
+//
+// @param net Index of the net to invert
 void production_rule_set::invert(int net) {
 	for (int threshold = 0; threshold < 2; threshold++) {
 		for (auto i = nets[net].gateOf[threshold].begin(); i != nets[net].gateOf[threshold].end(); i++) {
@@ -897,6 +968,12 @@ void production_rule_set::invert(int net) {
 	}
 }
 
+// Checks if a circuit can be implemented using only CMOS transistors
+//
+// This function checks if a circuit can be implemented using only CMOS transistors
+// by verifying that no transistor has both its threshold and driver set to the same value.
+//
+// @return True if the circuit can be implemented using only CMOS transistors, false otherwise
 bool production_rule_set::cmos_implementable() {
 	for (int i = 0; i < (int)devs.size(); i++) {
 		if (devs[i].threshold == devs[i].driver) {
@@ -906,6 +983,29 @@ bool production_rule_set::cmos_implementable() {
 	return true;
 }
 
+// Retrieves the guard condition for a net
+//
+// This function constructs a boolean cover (sum-of-products expression) representing 
+// the guard condition under which a net is driven to a specific value. It performs a 
+// depth-first search through the transistor network to identify all possible paths
+// that can drive the net to the specified value.
+//
+// The algorithm works as follows:
+// 1. Start with the target net and an empty guard condition (tautology)
+// 2. For each transistor driving the net to the specified value:
+//    a. Create a new guard condition by adding the gate condition of the transistor
+//    b. Recursively explore the source net of the transistor with this new guard
+// 3. If a power supply or primary input is reached, add the accumulated guard to the result
+// 4. If another gate-connected net is reached, add it as a literal in the guard
+//
+// This function is essential for analyzing circuit behavior, checking timing assumptions,
+// and verifying circuit correctness. It can separately analyze weak and strong drivers
+// to understand staticization and keeper circuits.
+//
+// @param net Index of the net to get the guard condition for
+// @param driver The driver value (0 or 1) we're interested in
+// @param weak Whether to consider only weak drivers (true) or only strong drivers (false)
+// @return Boolean cover representing the conditions under which the net is driven to the specified value
 boolean::cover production_rule_set::guard_of(int net, int driver, bool weak) {
 	struct walker {
 		int net;
@@ -1299,7 +1399,24 @@ vector<vector<int> > production_rule_set::size_with_stack_length() {
 // Strong drivers are sized based on stack length while weak drivers are
 // sized to be a fraction of the strength of conflicting drivers.
 //
-// @param ratio Ratio for sizing weak drivers relative to strong drivers
+// The algorithm takes the following approach:
+// 1. Identifies transistor stacks using depth-first search from drains to sources
+// 2. Sets base sizing for each transistor proportional to its stack depth
+// 3. Identifies weak drivers (used for staticizers/keepers) and sizes them differently
+// 4. Applies a ratio parameter to determine relative strength of weak vs. strong drivers
+//
+// Advanced sizing considerations (described in code comments):
+// - For general case optimization, the transistor network could be modeled as a resistor network
+// - The circuit could be partitioned into mutually exclusive driving conditions
+// - Each condition creates a constraint on device sizing to achieve target drive strength
+// - Multi-objective optimization could balance area minimization and energy efficiency
+// - Machine learning techniques could navigate this complex constraint space
+//
+// The current implementation uses a simplified approach that works well for
+// quasi-delay-insensitive circuits with 1-hot encodings, where driving conditions
+// are typically mutually exclusive.
+//
+// @param ratio Ratio for sizing weak drivers relative to strong drivers (typically 0.1)
 // @param report_progress Whether to print progress information
 void production_rule_set::size_devices(float ratio, bool report_progress) {
 	// TODO(edward.bingham) The general case sizing problem is really quite

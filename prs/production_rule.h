@@ -11,30 +11,49 @@ using namespace std;
 namespace prs
 {
 
+// This library implements production rule sets (PRS) for asynchronous circuit modeling.
+// It provides data structures and algorithms for representing, analyzing, and 
+// manipulating CMOS circuits at a level between boolean logic and physical transistors.
+//
+// The model represents:
+// - Nets (signals/wires) and their properties
+// - Devices (transistors) and their connections
+// - Power supplies and special nets
+// - Remote connections for modeling timing regions and isochronic forks
+//
+// The implementation supports quasi-delay-insensitive (QDI) circuit analysis,
+// boolean expression manipulation, transistor sizing, and circuit verification.
+
+// Defines behavioral and physical attributes for devices
+// Used to specify properties like weak/strong drivers, pass transistors,
+// timing constraints, and physical sizing information
 struct attributes {
 	attributes();
 	attributes(bool weak, bool pass=false, boolean::cube assume=1, uint64_t delay_max=10000);
 	~attributes();
 
-	bool weak;
-	bool force;
-	bool pass;
+	bool weak;     // Whether this is a weak driver (e.g., for staticizers/keepers)
+	bool force;    // Whether this is a very strong driver
+	bool pass;     // Whether this is a pass transistor (can conduct in both directions)
 	
-	uint64_t delay_max;
-	boolean::cover assume;
+	uint64_t delay_max;  // Maximum delay in picoseconds
+	boolean::cover assume;  // Assumptions about circuit state before active
 
 	// relative to minimum, values between 0 and 1 are made longer
-	float size;
-	string variant;
+	float size;    // Relative transistor size; values < 1 increase length
+	string variant;  // Technology variant for this device
 
 	void set_internal();
 
-	static attributes instant();
+	static attributes instant();  // Creates attributes for zero-delay transitions
 };
 
 bool operator==(const attributes &a0, const attributes &a1);
 bool operator!=(const attributes &a0, const attributes &a1);
 
+// Represents a transistor in the circuit model
+// Each device connects three nets (source, gate, drain) and has properties
+// that define how it functions (threshold, driver value, attributes)
 struct device {
 	device();
 	device(int source, int gate, int drain, int threshold, int driver, attributes attr=attributes());
@@ -45,12 +64,15 @@ struct device {
 	int gate;
 	int drain;
 	
-	int threshold;
-	int driver;
+	int threshold; // Gate value that turns transistor on (1 for NMOS, 0 for PMOS)
+	int driver;    // Value driven when on (0 for NMOS, 1 for PMOS)
 
-	attributes attr;
+	attributes attr;  // Additional behavioral and physical attributes
 };
 
+// Represents an electrical node/wire in the circuit
+// Maintains references to all connected devices and remote connections
+// Can represent inputs, outputs, power rails, or internal nodes
 struct net {
 	net(bool keep=false);
 	net(string name, int region=0, bool keep=false, bool isIO=false);
@@ -60,40 +82,47 @@ struct net {
 	// Check if the device is remote by comparing the net id against the relevant
 	// gate, source, or drain id. If they are different, then the device is
 	// remote and the transition should be delayed.
-	string name;
-	int region;
+	string name;    // Net name (empty for internal nodes)
+	int region;     // Isochronic region identifier for timing analysis
 
 	// indexed by device::threshold
-	array<vector<int>, 2> gateOf;
+	array<vector<int>, 2> gateOf;    // Devices where this net connects to gate (by threshold)
 
 	// indexed by device::driver
-	array<vector<int>, 2> sourceOf;
-	array<vector<int>, 2> rsourceOf;
-	array<vector<int>, 2> drainOf;
+	array<vector<int>, 2> sourceOf;  // Devices where this net connects to source (by driver)
+	array<vector<int>, 2> rsourceOf; // Special case for pass transistors
+	array<vector<int>, 2> drainOf;   // Devices where this net connects to drain (by driver)
 
-	vector<int> remote;
+	vector<int> remote;  // Other nets electrically connected across region boundaries
 
-	bool isIO;
-	bool keep;
-	int mirror;
-	int driver;
+	bool isIO;     // Whether this is an input/output net
+	bool keep;     // Whether state should be preserved with keepers/staticizers
+	int mirror;    // Complementary net (e.g., GND for VDD, vice versa)
+	int driver;    // Constant driver value (-1 for non-power, 0 for GND, 1 for VDD)
 
+	// Creates a remote connection to another net
+	// Remote connections preserve separate net identities while sharing properties
 	void add_remote(int uid);
+	
+	// Checks if this is an unnamed internal node
 	bool isNode() const;
 };
 
+// Main container class for a production rule set circuit model
+// Manages collections of nets and devices, implements circuit analysis
+// and manipulation algorithms, and enforces circuit invariants
 struct production_rule_set
 {
 	production_rule_set();
 	~production_rule_set();
 
-	string name;
+	string name;  // Name of the production rule set (usually circuit name)
 
-	vector<array<int, 2> > pwr;
+	vector<array<int, 2> > pwr;  // Power supply pairs [GND, VDD]
 
-	vector<device> devs;
+	vector<device> devs;  // All transistors in the circuit
 	// nets in this array should be ordered by uid
-	vector<net> nets;
+	vector<net> nets;     // All nets/nodes in the circuit
 
 	// settings that control behavior
 	bool assume_nobackflow; // (default false) nmos no longer drives weak 1 and pmos no longer drives weak 0
