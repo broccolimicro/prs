@@ -4,6 +4,14 @@
 #include <common/timer.h>
 #include <interpret_boolean/export.h>
 
+// This file implements the core data structures and algorithms for representing, analyzing,
+// and manipulating production rule sets (PRS). A production rule set describes logical
+// circuit behavior with direct mapping to CMOS implementation. It maintains a collection of:
+// - Nets (signals)
+// - Devices (transistors)
+// - Power supplies
+// - Behavioral constraints
+
 using namespace std;
 
 namespace prs
@@ -39,10 +47,17 @@ void attributes::set_internal() {
 	delay_max = 0;
 }
 
+// Creates an attribute set for instant transitions
+//
+// Used for situations where timing delay should be zero.
+// Useful for modeling ideal wires or direct connections.
 attributes attributes::instant() {
 	return attributes(false, false, 1, 0);
 }
 
+// Two attribute sets are equal if all their behavioral properties match.
+// Note: size and variant are not considered for equality since they are
+// physical implementation details rather than behavioral properties.
 bool operator==(const attributes &a0, const attributes &a1) {
 	return a0.weak == a1.weak and a0.force == a1.force and a0.pass == a1.pass and a0.delay_max == a1.delay_max and a0.assume == a1.assume;
 }
@@ -59,6 +74,15 @@ device::device() {
 	driver = 0;
 }
 
+// Parameterized constructor for device
+//
+// Creates a device with specific connections and properties.
+// @param source Source terminal connection (index into nets array)
+// @param gate Gate terminal connection (index into nets array)
+// @param drain Drain terminal connection (index into nets array)
+// @param threshold Gate value that turns on the device (1 for NMOS, 0 for PMOS)
+// @param driver Value the device drives when on (0 for NMOS, 1 for PMOS)
+// @param attr Behavioral and physical attributes of the device
 device::device(int source, int gate, int drain, int threshold, int driver, attributes attr) {
 	this->source = source;
 	this->gate = gate;
@@ -79,6 +103,13 @@ net::net(bool keep) {
 	this->driver = -1;
 }
 
+// Parameterized constructor for net
+//
+// Creates a net with specific properties and name.
+// @param name Signal name (empty for internal nodes)
+// @param region Isochronic region identifier
+// @param keep Whether the net's value should be staticized during simulation
+// @param isIO Whether this is an input/output signal
 net::net(string name, int region, bool keep, bool isIO) {
 	this->name = name;
 	this->region = region;
@@ -91,6 +122,9 @@ net::net(string name, int region, bool keep, bool isIO) {
 net::~net() {
 }
 
+// Connects this net to another net with a long wire (different isochronic region).
+//
+// @param uid Index of the net to connect to
 void net::add_remote(int uid) {
 	auto pos = lower_bound(remote.begin(), remote.end(), uid);
 	if (pos == remote.end() or *pos != uid) {
@@ -98,6 +132,9 @@ void net::add_remote(int uid) {
 	}
 }
 
+// Checks if this is an unnamed internal node
+//
+// @return True if the net has no name
 bool net::isNode() const {
 	return name.empty();
 }
@@ -114,6 +151,10 @@ production_rule_set::production_rule_set() {
 production_rule_set::~production_rule_set() {
 }
 
+// Prints the production rule set details to stdout for debugging.
+// - All nets and their properties
+// - All devices and their connections
+// - Power supplies
 void production_rule_set::print() {
 	cout << "nets " << nets.size() << endl;
 	for (int i = 0; i < (int)nets.size(); i++) {
@@ -131,6 +172,13 @@ void production_rule_set::print() {
 	}
 }
 
+// Creates a new net in the production rule set
+//
+// Creates a new net with specified properties and adds it to the circuit.
+// Every net is initially connected to itself in its remote list.
+//
+// @param n The net to add (uses default if not specified)
+// @return Index of the newly created net
 int production_rule_set::create(net n) {
 	int uid = (int)nets.size();
 	nets.push_back(n);
@@ -138,6 +186,11 @@ int production_rule_set::create(net n) {
 	return uid;
 }
 
+// Finds a net by name and region without creating it.
+//
+// @param name The name of the net to find
+// @param region The isochronic region to search in
+// @return Index of the net if found, -1 otherwise
 int production_rule_set::netIndex(string name, int region) const {
 	for (int i = 0; i < (int)nets.size(); i++) {
 		if (nets[i].name == name and nets[i].region == region) {
@@ -148,8 +201,17 @@ int production_rule_set::netIndex(string name, int region) const {
 	return -1;
 }
 
+// Searches for a net and optionally creates it if not found.
+// If a net with the same name exists in a different region,
+// the new net will be connected to it remotely.
+//
+// @param name The name of the net to find or create
+// @param region The isochronic region 
+// @param define Whether to create the net if not found
+// @return Index of the found/created net, or -1 if not found and not created
 int production_rule_set::netIndex(string name, int region, bool define) {
 	vector<int> remote;
+	// First try to find the exact net
 	for (int i = 0; i < (int)nets.size(); i++) {
 		if (nets[i].name == name) {
 			remote.push_back(i);
@@ -159,6 +221,8 @@ int production_rule_set::netIndex(string name, int region, bool define) {
 		}
 	}
 
+	// If not found but define is true or we found nets with the same name,
+	// create a new net and connect it to the other nets with the same name
 	if (define or not remote.empty()) {
 		int uid = create(net(name, region));
 		for (int i = 0; i < (int)remote.size(); i++) {
@@ -169,6 +233,10 @@ int production_rule_set::netIndex(string name, int region, bool define) {
 	return -1;
 }
 
+// Gets the name and region of a net
+//
+// @param uid Index of the net
+// @return Pair containing the name and region of the net
 pair<string, int> production_rule_set::netAt(int uid) const {
 	if (uid < 0) {
 		return pair<string, int>("_" + ::to_string(uid), 0);
@@ -176,6 +244,12 @@ pair<string, int> production_rule_set::netAt(int uid) const {
 	return pair<string, int>(nets[uid].name, nets[uid].region);
 }
 
+// Groups nets by electrical equivalence
+//
+// Identifies sets of nets that are connected as remotes and
+// therefore electrically equivalent.
+//
+// @return Vector of net groups where each group contains indices of equivalent nets
 vector<vector<int> > production_rule_set::remote_groups() const {
 	vector<vector<int> > groups;
 
@@ -192,6 +266,14 @@ vector<vector<int> > production_rule_set::remote_groups() const {
 	return groups;
 }
 
+// Counts the number of source connections for a net with a specific driver value
+//
+// This function helps analyze how many devices use this net as a source
+// with a particular sense.
+//
+// @param net Index of the net
+// @param value Driver value to count (0 or 1)
+// @return Count of devices using this net as a source with the specified driver value
 int production_rule_set::sources(int net, int value) const {
 	int result = 0;
 	for (auto i = nets[net].sourceOf[value].begin(); i != nets[net].sourceOf[value].end(); i++) {
@@ -200,6 +282,14 @@ int production_rule_set::sources(int net, int value) const {
 	return result;
 }
 
+// Counts the number of drain connections for a net with a specific driver value
+//
+// This function helps analyze how many devices use this net as a drain
+// with a particular sense.
+//
+// @param net Index of the net
+// @param value Driver value to count (0 or 1)
+// @return Count of devices using this net as a drain with the specified driver value
 int production_rule_set::drains(int net, int value) const {
 	int result = 0;
 	for (auto i = nets[net].drainOf[value].begin(); i != nets[net].drainOf[value].end(); i++) {
@@ -208,6 +298,12 @@ int production_rule_set::drains(int net, int value) const {
 	return result;
 }
 
+// Counts sources with specific attributes
+//
+// @param net Index of the net
+// @param value Driver value to count (0 or 1)
+// @param attr Specific attributes to match
+// @return Count of devices using this net as a source with matching attributes
 int production_rule_set::sources(int net, int value, attributes attr) const {
 	int result = 0;
 	for (auto i = nets[net].sourceOf[value].begin(); i != nets[net].sourceOf[value].end(); i++) {
@@ -216,6 +312,12 @@ int production_rule_set::sources(int net, int value, attributes attr) const {
 	return result;
 }
 
+// Counts drains with specific attributes
+//
+// @param net Index of the net
+// @param value Driver value to count (0 or 1)
+// @param attr Specific attributes to match
+// @return Count of devices using this net as a drain with matching attributes
 int production_rule_set::drains(int net, int value, attributes attr) const {
 	int result = 0;
 	for (auto i = nets[net].drainOf[value].begin(); i != nets[net].drainOf[value].end(); i++) {
@@ -224,6 +326,12 @@ int production_rule_set::drains(int net, int value, attributes attr) const {
 	return result;
 }
 
+// Counts sources with a specific weak/strong property
+//
+// @param net Index of the net
+// @param value Driver value to count (0 or 1)
+// @param weak Whether to count weak (true) or strong (false) drivers
+// @return Count of devices using this net as a source with the specified strength
 int production_rule_set::sources(int net, int value, bool weak) const {
 	int result = 0;
 	for (auto i = nets[net].sourceOf[value].begin(); i != nets[net].sourceOf[value].end(); i++) {
@@ -232,6 +340,12 @@ int production_rule_set::sources(int net, int value, bool weak) const {
 	return result;
 }
 
+// Counts drains with a specific weak/strong property
+//
+// @param net Index of the net
+// @param value Driver value to count (0 or 1)
+// @param weak Whether to count weak (true) or strong (false) drivers
+// @return Count of devices using this net as a drain with the specified strength
 int production_rule_set::drains(int net, int value, bool weak) const {
 	int result = 0;
 	for (auto i = nets[net].drainOf[value].begin(); i != nets[net].drainOf[value].end(); i++) {
@@ -240,6 +354,15 @@ int production_rule_set::drains(int net, int value, bool weak) const {
 	return result;
 }
 
+// Identifies unique attribute sets for devices driving a net
+//
+// Finds all distinct attribute groups used by devices that drive
+// a particular net with a specific value. Used to analyze driver
+// characteristics and potential conflicts.
+//
+// @param net Index of the net
+// @param value Driver value to analyze (0 or 1)
+// @return Vector of unique attribute sets
 vector<attributes> production_rule_set::attribute_groups(int net, int value) const {
 	vector<attributes> result;
 	for (auto i = nets[net].drainOf[value].begin(); i != nets[net].drainOf[value].end(); i++) {
@@ -255,6 +378,13 @@ vector<attributes> production_rule_set::attribute_groups(int net, int value) con
 	return result;
 }
 
+// Sets power supply nets for the circuit
+//
+// Defines the circuit's VDD and GND connections, which are essential for
+// CMOS operation. These are special nets that provide constant voltage values.
+//
+// @param vdd Index of the VDD (high voltage) net
+// @param gnd Index of the GND (low voltage) net
 void production_rule_set::set_power(int vdd, int gnd) {
 	nets[vdd].keep = true;
 	nets[vdd].driver = 1;
@@ -267,6 +397,14 @@ void production_rule_set::set_power(int vdd, int gnd) {
 	pwr.push_back({gnd, vdd});
 }
 
+// Creates a remote connection between two nets
+//
+// Remote connections indicate that nets are electrically connected
+// by a long wire. This function ensures that both nets reference
+// each other in their remote lists.
+//
+// @param n0 Index of the first net
+// @param n1 Index of the second net
 void production_rule_set::connect_remote(int n0, int n1) {
 	net *i0 = &nets[n0];
 	net *i1 = &nets[n1];
@@ -298,6 +436,15 @@ void production_rule_set::connect_remote(int n0, int n1) {
 	}
 }
 
+// Merges two nets into one by connecting them physically
+//
+// Creates a merged net by making n1 include all connections from n0
+// and then removing n0. Removes n0 from the nets array and updates
+// all references to n0 in other nets and devices.
+//
+// @param n0 Index of the net to remove (will be merged into n1)
+// @param n1 Index of the net to keep
+// @return Updated index of the kept net (may change if n0 < n1)
 int production_rule_set::connect(int n0, int n1) {
 	//create(n1);
 	if (n0 == n1 or n0 >= (int)nets.size()) {
@@ -749,6 +896,16 @@ bool production_rule_set::has_inverter_after(int net, int &_net) {
 	return false;
 }
 
+// Adds an inverter between two nets
+//
+// Creates a standard CMOS inverter with NMOS and PMOS transistors
+// connecting the 'from' and 'to' nets.
+//
+// @param from Index of the input net
+// @param to Index of the output net
+// @param attr Attributes to assign to the transistors
+// @param vdd Index of the VDD power supply net (uses default if invalid)
+// @param gnd Index of the GND power supply net (uses default if invalid)
 void production_rule_set::add_inverter_between(int from, int to, attributes attr, int vdd, int gnd) {
 	if (vdd >= (int)nets.size()) {
 		vdd = pwr[0][1];
@@ -760,14 +917,33 @@ void production_rule_set::add_inverter_between(int from, int to, attributes attr
 	connect(add_source(from, to, 0, 1, attr), vdd);
 }
 
+// Adds an inverter after a net
+//
+// Creates a new net and connects an inverter between the input net
+// and the newly created net.
+//
+// @param net Index of the net to invert
+// @param attr Attributes to assign to the transistors
+// @param vdd Index of the VDD power supply net (uses default if invalid)
+// @param gnd Index of the GND power supply net (uses default if invalid)
+// @return Index of the newly created inverted net
 int production_rule_set::add_inverter_after(int net, attributes attr, int vdd, int gnd) {
 	int _net = create();
-	//int _net = nets.size();
-	//create(_net);
 	add_inverter_between(net, _net, attr, vdd, gnd);
 	return _net;
 }
 
+// Adds a buffer (two inverters in series) before a net
+//
+// Creates two new nets and connects them with inverters to form a buffer
+// before the specified net. This is useful to make room for keepers/staticizers
+// without changing the handshake logic.
+//
+// @param net Index of the net to buffer
+// @param attr Attributes to assign to the transistors
+// @param vdd Index of the VDD power supply net (uses default if invalid)
+// @param gnd Index of the GND power supply net (uses default if invalid)
+// @return Array containing the indices of the two new nets ([input, middle])
 array<int, 2> production_rule_set::add_buffer_before(int net, attributes attr, int vdd, int gnd) {
 	//int __net = nets.size();
 	//create(__net);
@@ -792,6 +968,16 @@ array<int, 2> production_rule_set::add_buffer_before(int net, attributes attr, i
 	return {__net, _net};
 }
 
+// Adds keeper circuits to maintain state for nodes that need to be staticized
+//
+// Keepers are weak feedback inverters that maintain the state of a node when
+// it's not being actively driven. This function identifies which nodes require
+// keepers based on their 'keep' property and adds appropriate keeper circuits.
+//
+// @param share Whether to share weak power rails across multiple keepers
+// @param hcta Whether to use half-cycle timing assumption for optimizations
+// @param keep Boolean cover specifying the legal state space for the production rule set
+// @param report_progress Whether to print progress information
 void production_rule_set::add_keepers(bool share, bool hcta, boolean::cover keep, bool report_progress) {
 	if (report_progress) {
 		printf("  %s...", name.c_str());
@@ -879,6 +1065,13 @@ void production_rule_set::add_keepers(bool share, bool hcta, boolean::cover keep
 	}
 }
 
+// Identifies devices in the circuit that are weak drivers
+//
+// Weak drivers are used for staticization and other specialized purposes.
+// This function performs a depth-first search to identify all devices
+// that must be treated as weak drivers based on connectivity.
+//
+// @return Vector of booleans indicating whether each device is a weak driver
 vector<bool> production_rule_set::identify_weak_drivers() {
 	// Depth first search from weak devices from source to drains, this allows us
 	// to propagate weak driver information down the stack so we don't oversize
@@ -937,6 +1130,13 @@ vector<bool> production_rule_set::identify_weak_drivers() {
 	return weak;
 }
 
+// Analyzes device stacks and sizes them based on stack length
+//
+// Performs a depth-first search of the circuit to identify all
+// transistor stacks and calculate appropriate sizes based on 
+// stack length and other circuit constraints.
+//
+// @return Vector of device stacks, where each stack is a vector of device indices
 vector<vector<int> > production_rule_set::size_with_stack_length() {
 	struct frame {
 		int net;
@@ -998,6 +1198,14 @@ vector<vector<int> > production_rule_set::size_with_stack_length() {
 	return device_tree;
 }
 
+// Sizes devices in the circuit based on their function and context
+//
+// Adjusts the size attribute of devices based on their role in the circuit.
+// Strong drivers are sized based on stack length while weak drivers are
+// sized to be a fraction of the strength of conflicting drivers.
+//
+// @param ratio Ratio for sizing weak drivers relative to strong drivers
+// @param report_progress Whether to print progress information
 void production_rule_set::size_devices(float ratio, bool report_progress) {
 	// TODO(edward.bingham) The general case sizing problem is really quite
 	// challenging. We can take the transistor network, break it up into mutually
@@ -1127,6 +1335,12 @@ void production_rule_set::size_devices(float ratio, bool report_progress) {
 	}
 }
 
+// Swaps the source and drain terminals of a device
+//
+// Reverses the direction of a MOS transistor by swapping its source
+// and drain connections and updating all the reference lists.
+//
+// @param dev Index of the device to modify
 void production_rule_set::swap_source_drain(int dev) {
 	int prev_source = devs[dev].source;
 	int prev_drain = devs[dev].drain;
@@ -1150,6 +1364,12 @@ void production_rule_set::swap_source_drain(int dev) {
 	}
 }
 
+// Normalizes the direction of devices in the circuit
+//
+// Performs a breadth-first search from power supply nets to ensure
+// consistent source-to-drain direction throughout the circuit. This
+// helps with circuit simulation and analysis by establishing a consistent
+// current flow direction.
 void production_rule_set::normalize_source_drain() {
 	struct frame {
 		int net;
