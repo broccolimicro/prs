@@ -563,6 +563,15 @@ int production_rule_set::connect(int n0, int n1) {
 	return n1;
 }
 
+// Replaces references to a net index in a list
+//
+// Updates all references to a specific net index in a vector,
+// handling the shift in indices when a net is removed.
+//
+// @param lst The vector to update
+// @param from The net index to replace
+// @param to The new net index to use
+// @return void
 void production_rule_set::replace(vector<int> &lst, int from, int to) {
 	if (to == from) {
 		return;
@@ -579,6 +588,15 @@ void production_rule_set::replace(vector<int> &lst, int from, int to) {
 	}
 }
 
+// Replaces references to a net index in a map
+//
+// Updates all references to a specific net index in a map's values,
+// handling the shift in indices when a net is removed.
+//
+// @param lst The map to update
+// @param from The net index to replace
+// @param to The new net index to use
+// @return void
 void production_rule_set::replace(map<int, int> &lst, int from, int to) {
 	if (to == from) {
 		return;
@@ -654,6 +672,18 @@ void production_rule_set::add_mos(int source, int gate, int drain, int threshold
 	devs.push_back(device(source, gate, drain, threshold, driver, attr));
 }
 
+// Adds devices to implement a boolean cube-based guard condition
+//
+// Creates a series of transistors to implement a guard condition 
+// specified as a conjunction of literals (represented by a boolean cube).
+// Each literal in the cube connects in series to drive the specified drain net.
+//
+// @param guard Boolean cube representing the guard condition
+// @param drain Index of the drain net to drive
+// @param driver Driver value (0 or 1) to assign
+// @param attr Attributes for the created devices
+// @param order Preferred order for evaluating variables in the guard
+// @return Index of the source net of the chain
 int production_rule_set::add(boolean::cube guard, int drain, int driver, attributes attr, vector<int> order) {
 	for (int i = 0; i < (int)order.size() and not guard.is_tautology(); i++) {
 		int threshold = guard.get(order[i]);
@@ -675,6 +705,19 @@ int production_rule_set::add(boolean::cube guard, int drain, int driver, attribu
 	return drain;
 }
 
+// Implements a boolean cover with hierarchical factoring
+//
+// Creates a circuit implementing a boolean cover (sum of products) expression
+// using hierarchical factoring to optimize the implementation. Common terms
+// are factored out and implemented once, and remaining terms are partitioned
+// into left and right subexpressions.
+//
+// @param guard Boolean cover to implement
+// @param drain Index of the drain net to drive
+// @param driver Driver value (0 or 1) to assign
+// @param attr Attributes for the created devices
+// @param order Preferred order for evaluating variables
+// @return Index of the source net of the implemented circuit
 int production_rule_set::add_hfactor(boolean::cover guard, int drain, int driver, attributes attr, vector<int> order) {
 	if (guard.is_null()) {
 		return std::numeric_limits<int>::max();
@@ -704,6 +747,18 @@ int production_rule_set::add_hfactor(boolean::cover guard, int drain, int driver
 	return drain;
 }
 
+// Implements a production rule to drive a source net
+//
+// Creates a circuit implementing a guard condition that drives a source net
+// with a specific value when the guard is true.
+//
+// @param source Index of the source net to use as power
+// @param guard Boolean cover representing the guard condition
+// @param var Index of the variable to drive
+// @param val Value to drive (0 or 1)
+// @param attr Attributes for the created devices
+// @param order Preferred order for evaluating variables
+// @return void
 void production_rule_set::add(int source, boolean::cover guard, int var, int val, attributes attr, vector<int> order) {
 	int drain = add_hfactor(guard, var, val, attr, order);
 	if (drain != std::numeric_limits<int>::max()) {
@@ -711,6 +766,17 @@ void production_rule_set::add(int source, boolean::cover guard, int var, int val
 	}
 }
 
+// Implements a production rule with a complex action
+//
+// Creates circuitry to implement a production rule with a guard
+// condition driving multiple action terms.
+//
+// @param source Index of the source net to use as power
+// @param guard Boolean cover representing the guard condition
+// @param action Boolean cover representing the action to perform
+// @param attr Attributes for the created devices
+// @param order Preferred order for evaluating variables
+// @return void
 void production_rule_set::add(int source, boolean::cover guard, boolean::cover action, attributes attr, vector<int> order) {
 	for (auto c = action.cubes.begin(); c != action.cubes.end(); c++) {
 		for (int i = 0; i < (int)nets.size(); i++) {
@@ -722,6 +788,16 @@ void production_rule_set::add(int source, boolean::cover guard, boolean::cover a
 	}
 }
 
+// Moves a gate connection for a device
+//
+// Updates a device's gate connection to point to a new net and optionally
+// changes the threshold, updating all related data structures to maintain
+// consistency of the circuit representation.
+//
+// @param dev Index of the device to modify
+// @param gate Index of the new net to connect to the gate
+// @param threshold New threshold value (-1 to keep current value)
+// @return void
 void production_rule_set::move_gate(int dev, int gate, int threshold) {
 	int prev_threshold = devs[dev].threshold;
 	int prev_gate = devs[dev].gate;
@@ -741,6 +817,17 @@ void production_rule_set::move_gate(int dev, int gate, int threshold) {
 	}
 }
 
+// Moves both source and drain connections for a device
+//
+// Updates a device's source and drain connections to point to new nets
+// and optionally changes the driver value, updating all related data
+// structures to maintain consistency of the circuit representation.
+//
+// @param dev Index of the device to modify
+// @param source Index of the new net for the source connection
+// @param drain Index of the new net for the drain connection
+// @param driver New driver value (-1 to keep current value)
+// @return void
 void production_rule_set::move_source_drain(int dev, int source, int drain, int driver) {
 	int prev_driver = devs[dev].driver;
 	int prev_source = devs[dev].source;
@@ -862,6 +949,14 @@ boolean::cover production_rule_set::guard_of(int net, int driver, bool weak) {
 	return result;
 }
 
+// Checks if a net has an inverter after it
+//
+// Determines if a net is connected to all other nets through an inverter,
+// This inverter can be used to implement a staticizer.
+//
+// @param net Index of the net to check
+// @param _net Reference to store the index of the inverted net if found
+// @return True if an inverter is found, false otherwise
 bool production_rule_set::has_inverter_after(int net, int &_net) {
 	array<vector<int>, 2> unary;
 	for (int i = 0; i < 2; i++) {
