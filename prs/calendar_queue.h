@@ -126,10 +126,10 @@ struct calendar_queue {
 			} else if (calendar[i+1].first != nullptr) {
 				event *e0 = calendar[i].second;
 				event *e1 = calendar[i+1].second;
-				uint64_t y0 = yearof(priority(e0->value));
-				uint64_t y1 = yearof(priority(e1->value));
-				uint64_t sy0 = yearof(priority(calendar[i].first->value));
-				uint64_t sy1 = yearof(priority(calendar[i+1].first->value));
+				uint64_t y0 = e0 == nullptr ? yearof(now) : yearof(priority(e0->value));
+				uint64_t y1 = e1 == nullptr ? yearof(now) : yearof(priority(e1->value));
+				uint64_t sy0 = calendar[i].first == nullptr ? yearof(now) : yearof(priority(calendar[i].first->value));
+				uint64_t sy1 = calendar[i].first == nullptr ? yearof(now) : yearof(priority(calendar[i+1].first->value));
 				while (e1 != nullptr) {
 					if (y0 <= y1) {
 						event *s1 = nullptr;
@@ -182,10 +182,22 @@ struct calendar_queue {
 							y1 = yearof(priority(e1->value));
 						}
 					} else if (y0 != sy0) {
-						for (e0 = e0->prev; e0 != nullptr and yearof(priority(e0->value)) == y0; e0 = e0->prev);
-						y0 = yearof(priority(e0->value));
+						if (e0 != nullptr) {
+							e0 = e0->prev;
+						}
+						while (e0 != nullptr and yearof(priority(e0->value)) == y0) {
+							e0 = e0->prev;
+						}
+						if (e0 != nullptr) {
+							y0 = yearof(priority(e0->value));
+						} else {
+							y0 = yearof(now); // Reset to avoid comparisons with uninitialized value
+							sy0 = y0;
+						}
 					} else {
 						e0 = nullptr;
+						y0 = yearof(now);
+						sy0 = y0;
 					}
 				}
 			}
