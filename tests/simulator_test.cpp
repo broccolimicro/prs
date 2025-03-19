@@ -277,18 +277,18 @@ TEST(SimulatorTest, SignalStrengthsTest) {
 	EXPECT_EQ(sim.strength.get(c_idx), 1);
 }
 
-TEST(SimulatorTest, RaceConditionTest) {
+TEST(SimulatorTest, InstabilityTest) {
 	// Test that verifies the fire() method with events that nearly coincide
 	string prs_str = R"(
 	// Two paths to drive out with different delays
-	a->x- [after=10]
-	~a->x+ [after=15]
+	a->x-
+	~a->x+
 	
-	a->y- [after=12]
-	~a->y+ [after=13]
+	a->y+
+	~a->y-
 	
-	x&y->out- [after=5]
-	~x|~y->out+ [after=5]
+	x&y->out-
+	~x|~y->out+
 	)";
 
 	production_rule_set prs = parse_prs_string(prs_str);
@@ -316,45 +316,36 @@ TEST(SimulatorTest, RaceConditionTest) {
 	
 	// Set initial values to ensure a known state
 	// Initially set x and y to 1 (so out will be driven by x&y->out-)
-	sim.set(x_idx, 1, 3);
-	sim.set(y_idx, 1, 3);
-
+	sim.set(a_idx, 1, 3);
 	while (not sim.enabled.empty()) {
 		sim.fire();
 	}
 	
 	// Verify initial state
-	EXPECT_EQ(sim.encoding.get(x_idx), 1);
-	EXPECT_EQ(sim.encoding.get(y_idx), 1);
-	EXPECT_EQ(sim.encoding.get(out_idx), 0);
-	
-	// Set input 'a' to 1 (which should eventually make x=0, y=0, out=1)
-	sim.set(a_idx, 1, 3);
-	
-	// Run the simulation - all events should fire in the correct order
-	while (not sim.enabled.empty()) {
-		sim.fire();
-	}
-	
-	// x and y should both be 0 after a=1 propagates
 	EXPECT_EQ(sim.encoding.get(x_idx), 0);
-	EXPECT_EQ(sim.encoding.get(y_idx), 0);
-	
-	// out should be 1 since ~x|~y=1|1=1, activating ~x|~y->out+
+	EXPECT_EQ(sim.encoding.get(y_idx), 1);
 	EXPECT_EQ(sim.encoding.get(out_idx), 1);
 	
-	// Now switch 'a' to 0 (creating a new series of events)
+	// Set input 'a' to 0 (which should eventually make x=1, y=1, out=0)
 	sim.set(a_idx, 0, 3);
 	
-	// Run simulation event by event, checking state
-	while (not sim.enabled.empty()) {
-		sim.fire();
-	}
+	sim.fire(x_idx);
+	sim.fire(y_idx);
+	enabled_transition t = sim.fire(out_idx);
 	
-	// Final state: a=0 should make x=1, y=1, and out=0 (since x&y->out-)
+	EXPECT_FALSE(t.stable);
+
+	// x and y should both be 1 after a=0 propagates, creating an instability in out
 	EXPECT_EQ(sim.encoding.get(x_idx), 1);
-	EXPECT_EQ(sim.encoding.get(y_idx), 1);
-	EXPECT_EQ(sim.encoding.get(out_idx), 0);
+	EXPECT_EQ(sim.encoding.get(y_idx), 0);
+	EXPECT_EQ(sim.encoding.get(out_idx), -1);
+
+	// TODO(edward.bingham) instabilities should eventually resolve.
+	//while (not sim.enabled.empty()) {
+	//	sim.fire();
+	//}
+
+	//EXPECT_EQ(sim.encoding.get(out_idx), 1);
 }
 
 TEST(SimulatorTest, TimingPropagationTest) {
@@ -461,7 +452,7 @@ TEST(SimulatorTest, TimingPropagationTest) {
 	EXPECT_EQ(sim.encoding.get(e_idx), 0);  // d->e-
 }
 
-TEST(SimulatorTest, MultiDriverResolutionTest) {
+TEST(SimulatorTest, InterferenceTest) {
 	// Test that verifies how the simulator resolves multiple drivers on the same net
 	string prs_str = R"(
 	// Multiple drivers for out
