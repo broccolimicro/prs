@@ -414,7 +414,7 @@ void simulator::evaluate(deque<int> nets) {
 		if (debug) cout << value << " strength = " << drive_strength << endl;
 
 		// TODO(edward.bingham) we should only propagate instantly here if delay_max is 0, we need to handle the other condition in the import/export of production rules, not in the simulator
-		if ((delay_max == 0 or (base->nets[net].gateOf[0].empty() and base->nets[net].gateOf[1].empty()))) {
+		if (delay_max == 0 or (base->nets[net].gateOf[0].empty() and base->nets[net].gateOf[1].empty() and (not base->nets[net].sourceOf[0].empty() or not base->nets[net].sourceOf[1].empty()))) {
 			if (value >= 0) {
 				ack &= guard & assumed;
 				assume(assumed);

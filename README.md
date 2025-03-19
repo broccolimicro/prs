@@ -142,45 +142,45 @@ Efficient priority queue implementation optimized for discrete event simulation:
 ### Building a Circuit
 ```cpp
 // Create a new production rule set
-prs::production_rule_set circuit;
+prs::production_rule_set pr;
 
 // Define nets
-int a = circuit.netIndex("a", 0, true);
-int b = circuit.netIndex("b", 0, true);
-int c = circuit.netIndex("c", 0, true);
+int a = pr.netIndex("a", 0, true);
+int b = pr.netIndex("b", 0, true);
+int c = pr.netIndex("c", 0, true);
 
 // Define power nets
-int vdd = circuit.netIndex("Vdd", 0, true);
-int gnd = circuit.netIndex("GND", 0, true);
-circuit.set_power(vdd, gnd);
+int vdd = pr.netIndex("Vdd", 0, true);
+int gnd = pr.netIndex("GND", 0, true);
+pr.set_power(vdd, gnd);
 
 // Create an inverter (a→b)
-circuit.add_inverter_between(a, b);
+pr.add_inverter_between(a, b);
 
 // Create a NAND gate (b&c→d)
 boolean::cube guard;
 guard.set_var(b, 1);
 guard.set_var(c, 1);
-int d = circuit.netIndex("d", 0, true);
-circuit.add(guard, d, 0);  // b&c → d-
+int d = pr.netIndex("d", 0, true);
+pr.add(guard, d, 0);  // b&c → d-
 ```
 
 ### Simulating a Circuit
 ```cpp
-// Create simulator with the circuit
-prs::simulator sim(&circuit);
+// Create simulator with the pr
+prs::simulator sim(&pr);
 
 // Reset to initial state
 sim.reset();
 
 // Set input and run simulation
-sim.set(circuit.netIndex("a"), 1);  // Set 'a' high
+sim.set(pr.netIndex("a"), 1);  // Set 'a' high
 while(!sim.enabled.empty()) {
     sim.fire();  // Process next event
 }
 
 // Check output value
-int output_net = circuit.netIndex("d");
+int output_net = pr.netIndex("d");
 int value = sim.encoding.get_val(output_net);
 ```
 
@@ -188,15 +188,15 @@ int value = sim.encoding.get_val(output_net);
 ```cpp
 // Perform bubble reshuffling to optimize signal polarities
 prs::bubble optimizer;
-optimizer.load_prs(circuit);
+optimizer.load_prs(pr);
 optimizer.reshuffle();
-optimizer.save_prs(&circuit);
+optimizer.save_prs(&pr);
 
-// Add keeper circuits to maintain state
-circuit.add_keepers();
+// Add keeper prs to maintain state
+pr.add_keepers();
 
 // Size devices based on stack length
-circuit.size_devices();
+pr.size_devices();
 ```
 
 ## Known Limitations
