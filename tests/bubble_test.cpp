@@ -1,11 +1,11 @@
 #include <gtest/gtest.h>
 #include <prs/production_rule.h>
 #include <prs/bubble.h>
-#include "test_helpers.h"
+#include "helpers.h"
 #include <interpret_prs/export.h>
 
 using namespace prs;
-using namespace test_helpers;
+using namespace test;
 
 // Helper function to count the number of bubbles in the graph
 size_t count_bubbles(const bubble& b) {

@@ -1,6 +1,6 @@
-#include "test_helpers.h"
+#include "helpers.h"
 
-namespace test_helpers {
+namespace test {
 
 prs::production_rule_set parse_prs_string(const std::string &prs_str) {
 	prs::production_rule_set prs;

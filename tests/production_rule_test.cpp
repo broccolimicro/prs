@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <prs/production_rule.h>
-#include "test_helpers.h"
+#include "helpers.h"
 #include <sstream>
 #include <numeric>
 #include <algorithm>
@@ -8,7 +8,7 @@
 #include <interpret_prs/export.h>
 
 using namespace prs;
-using namespace test_helpers;
+using namespace test;
 using namespace std;
 
 TEST(ProductionRuleTest, BasicParsingTest) {

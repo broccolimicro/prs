@@ -1,13 +1,13 @@
 #include <gtest/gtest.h>
 #include <prs/synthesize.h>
-#include "test_helpers.h"
+#include "helpers.h"
 
 #include <interpret_prs/export.h>
 
 using namespace prs;
 using namespace sch;
 using namespace phy;
-using namespace test_helpers;
+using namespace test;
 
 TEST(SynthesizeTest, RoundTripTest) {
 	string prs_str = R"(require driven, stable, noninterfering

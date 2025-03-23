@@ -238,9 +238,6 @@ int production_rule_set::netIndex(string name, int region, bool define) {
 // @param uid Index of the net
 // @return Pair containing the name and region of the net
 pair<string, int> production_rule_set::netAt(int uid) const {
-	if (uid < 0) {
-		return pair<string, int>("_" + ::to_string(uid), 0);
-	}
 	return pair<string, int>(nets[uid].name, nets[uid].region);
 }
 

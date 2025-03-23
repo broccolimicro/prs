@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 #include <prs/production_rule.h>
 #include <prs/simulator.h>
-#include "test_helpers.h"
+#include "helpers.h"
 
 using namespace prs;
-using namespace test_helpers;
+using namespace test;
 
 TEST(SimulatorTest, SimpleInverterSimulation) {
 	string prs_str = R"(
