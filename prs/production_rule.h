@@ -135,13 +135,14 @@ struct production_rule_set
 	bool require_noninterfering; // Vdd to GND shorts not allowed if true
 	bool require_adiabatic;      // non-adiabatic transitions not allowed if true
 
-	void print();
+	void print() const;
 
 	int create(net n=net());
 
 	int netIndex(string name, int region=0) const;
 	int netIndex(string name, int region=0, bool define=false);
 	pair<string, int> netAt(int uid) const;
+	int netCount() const;
 
 	vector<vector<int> > remote_groups() const;
 

@@ -1,6 +1,6 @@
 NAME          = prs
 DEPEND        = sch phy boolean interpret_boolean parse_expression parse_ucs parse common
-TEST_DEPEND   = interpret_prs prs interpret_boolean parse_prs parse_spice parse_dot parse_expression parse_ucs parse sch phy boolean ucs common
+TEST_DEPEND   = interpret_prs prs interpret_boolean parse_prs parse_spice parse_dot parse_expression parse_ucs parse sch phy boolean common
 
 CXXFLAGS      = -std=c++17 -O2 -g -Wall -fmessage-length=0
 LDFLAGS       =  

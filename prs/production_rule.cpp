@@ -155,7 +155,7 @@ production_rule_set::~production_rule_set() {
 // - All nets and their properties
 // - All devices and their connections
 // - Power supplies
-void production_rule_set::print() {
+void production_rule_set::print() const {
 	cout << "nets " << nets.size() << endl;
 	for (int i = 0; i < (int)nets.size(); i++) {
 		cout << "net " << i << ": " << nets[i].name << "'" << nets[i].region << " gateOf=" << to_string(nets[i].gateOf[0]) << to_string(nets[i].gateOf[1]) << " sourceOf=" << to_string(nets[i].sourceOf[0]) << to_string(nets[i].sourceOf[1]) << " drainOf=" << to_string(nets[i].drainOf[0]) << to_string(nets[i].drainOf[1]) << " remote=" << to_string(nets[i].remote) << (nets[i].keep ? " keep" : "") << (nets[i].isIO ? " io" : "") << " mirror=" << nets[i].mirror << " driver=" << nets[i].driver << endl;
@@ -238,7 +238,14 @@ int production_rule_set::netIndex(string name, int region, bool define) {
 // @param uid Index of the net
 // @return Pair containing the name and region of the net
 pair<string, int> production_rule_set::netAt(int uid) const {
+	if (uid >= (int)nets.size()) {
+		return pair<string, int>("", 0);
+	}
 	return pair<string, int>(nets[uid].name, nets[uid].region);
+}
+
+int production_rule_set::netCount() const {
+	return (int)nets.size();
 }
 
 // Groups nets by electrical equivalence
