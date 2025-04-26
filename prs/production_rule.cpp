@@ -96,7 +96,6 @@ device::~device() {
 }
 
 net::net(bool keep) {
-	this->region = 0;
 	this->keep = keep;
 	this->isIO = false;
 	this->mirror = 0;
@@ -110,9 +109,8 @@ net::net(bool keep) {
 // @param region Isochronic region identifier
 // @param keep Whether the net's value should be staticized during simulation
 // @param isIO Whether this is an input/output signal
-net::net(string name, int region, bool keep, bool isIO) {
+net::net(ucs::Net name, bool keep, bool isIO) {
 	this->name = name;
-	this->region = region;
 	this->keep = keep;
 	this->isIO = isIO;
 	this->mirror = 0;
@@ -139,6 +137,20 @@ bool net::isNode() const {
 	return name.empty();
 }
 
+ucs::Net invert(ucs::Net name) {
+	if (name.fields.back().name[0] == '_') {
+		name.fields.back().name.erase(name.fields.back().name.begin());
+	} else {
+		name.fields.back().name = "_" + name.fields.back().name;
+	}
+	return name;
+}
+
+ucs::Net makeWeak(ucs::Net name) {
+	name.fields.back().name = "weak_" + name.fields.back().name;
+	return name;
+}
+
 production_rule_set::production_rule_set() {
 	assume_nobackflow = false;
 	assume_static = false;
@@ -158,7 +170,7 @@ production_rule_set::~production_rule_set() {
 void production_rule_set::print() const {
 	cout << "nets " << nets.size() << endl;
 	for (int i = 0; i < (int)nets.size(); i++) {
-		cout << "net " << i << ": " << nets[i].name << "'" << nets[i].region << " gateOf=" << to_string(nets[i].gateOf[0]) << to_string(nets[i].gateOf[1]) << " sourceOf=" << to_string(nets[i].sourceOf[0]) << to_string(nets[i].sourceOf[1]) << " drainOf=" << to_string(nets[i].drainOf[0]) << to_string(nets[i].drainOf[1]) << " remote=" << to_string(nets[i].remote) << (nets[i].keep ? " keep" : "") << (nets[i].isIO ? " io" : "") << " mirror=" << nets[i].mirror << " driver=" << nets[i].driver << endl;
+		cout << "net " << i << ": " << nets[i].name.to_string() << " gateOf=" << to_string(nets[i].gateOf[0]) << to_string(nets[i].gateOf[1]) << " sourceOf=" << to_string(nets[i].sourceOf[0]) << to_string(nets[i].sourceOf[1]) << " drainOf=" << to_string(nets[i].drainOf[0]) << to_string(nets[i].drainOf[1]) << " remote=" << to_string(nets[i].remote) << (nets[i].keep ? " keep" : "") << (nets[i].isIO ? " io" : "") << " mirror=" << nets[i].mirror << " driver=" << nets[i].driver << endl;
 	}
 
 	cout << "devs " << devs.size() << endl;
@@ -191,9 +203,9 @@ int production_rule_set::create(net n) {
 // @param name The name of the net to find
 // @param region The isochronic region to search in
 // @return Index of the net if found, -1 otherwise
-int production_rule_set::netIndex(string name, int region) const {
+int production_rule_set::netIndex(ucs::Net name) const {
 	for (int i = 0; i < (int)nets.size(); i++) {
-		if (nets[i].name == name and nets[i].region == region) {
+		if (nets[i].name == name) {
 			return i;
 		}
 	}
@@ -209,13 +221,13 @@ int production_rule_set::netIndex(string name, int region) const {
 // @param region The isochronic region 
 // @param define Whether to create the net if not found
 // @return Index of the found/created net, or -1 if not found and not created
-int production_rule_set::netIndex(string name, int region, bool define) {
+int production_rule_set::netIndex(ucs::Net name, bool define) {
 	vector<int> remote;
 	// First try to find the exact net
 	for (int i = 0; i < (int)nets.size(); i++) {
-		if (nets[i].name == name) {
+		if (nets[i].name.fields == name.fields) {
 			remote.push_back(i);
-			if (nets[i].region == region) {
+			if (nets[i].name.region == name.region) {
 				return i;
 			}
 		}
@@ -224,7 +236,7 @@ int production_rule_set::netIndex(string name, int region, bool define) {
 	// If not found but define is true or we found nets with the same name,
 	// create a new net and connect it to the other nets with the same name
 	if (define or not remote.empty()) {
-		int uid = create(net(name, region));
+		int uid = create(net(name));
 		for (int i = 0; i < (int)remote.size(); i++) {
 			connect_remote(uid, remote[i]);
 		}
@@ -237,11 +249,11 @@ int production_rule_set::netIndex(string name, int region, bool define) {
 //
 // @param uid Index of the net
 // @return Pair containing the name and region of the net
-pair<string, int> production_rule_set::netAt(int uid) const {
+ucs::Net production_rule_set::netAt(int uid) const {
 	if (uid >= (int)nets.size()) {
-		return pair<string, int>("", 0);
+		return ucs::Net();
 	}
-	return pair<string, int>(nets[uid].name, nets[uid].region);
+	return nets[uid].name;
 }
 
 int production_rule_set::netCount() const {
@@ -1243,8 +1255,8 @@ void production_rule_set::add_keepers(bool share, bool hcta, boolean::cover keep
 				// If we're sharing the weak power signals across multiple cells, then
 				// we need to make them named nets so that we can put them in the IO
 				// ports.
-				weakpwr[0] = create("weak_" + nets[pwr[0][0]].name);
-				weakpwr[1] = create("weak_" + nets[pwr[0][1]].name);
+				weakpwr[0] = create(makeWeak(nets[pwr[0][0]].name));
+				weakpwr[1] = create(makeWeak(nets[pwr[0][1]].name));
 			} else {
 				weakpwr[0] = create();
 				weakpwr[1] = create();

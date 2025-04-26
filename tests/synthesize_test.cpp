@@ -20,17 +20,23 @@ TEST(SynthesizeTest, RoundTripTest) {
 )";
 
 	production_rule_set prs = parse_prs_string(prs_str);
+	prs.print();
 	Tech tech = create_test_tech();
 
 	string initial_str = export_production_rule_set(prs).to_string();
+	cout << initial_str << endl;
 	EXPECT_EQ(initial_str, prs_str);
 
 	// Build netlist
 	Subckt ckt = build_netlist(tech, prs);
+	ckt.print();
 
 	// Extract rules back from the netlist
 	production_rule_set extracted_prs = extract_rules(tech, ckt);
+	extracted_prs.print();
+
 	string exported_str = export_production_rule_set(extracted_prs).to_string();
+	cout << exported_str << endl;
 
 	EXPECT_EQ(exported_str, target_prs_str);
 }

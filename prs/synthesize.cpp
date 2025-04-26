@@ -20,7 +20,7 @@ sch::Subckt build_netlist(const phy::Tech &tech, const production_rule_set &prs,
 	// Each net in the PRS maps to a corresponding net in the circuit
 	for (int i = 0; i < (int)prs.nets.size(); i++) {
 		// TODO(edward.bingham) we gotta figure out IO
-		result.push(sch::Net(prs.nets[i].name, prs.nets[i].driver >= 0));
+		result.push(sch::Net(prs.nets[i].name.to_string(), prs.nets[i].driver >= 0));
 	}
 
 	// Get minimum length from technology constraints
