@@ -108,11 +108,11 @@ void bubble::load_prs(const production_rule_set &prs)
 							
 							// Dividing signal: Same signal drives multiple outputs with conflicting polarities
 							if (j.first->tval == -1 or j.first->tval == a.tval) {
-								error("", "dividing signal found in production rules {" + prs.nets[a.from].name.to_string() + " -> " + prs.nets[a.to].name.to_string() + (a.tval == 1 ? "+" : "-") + "}", __FILE__, __LINE__);
+								error("", "dividing signal found in production rules {" + prs.nets[a.from].name + " -> " + prs.nets[a.to].name + (a.tval == 1 ? "+" : "-") + "}", __FILE__, __LINE__);
 							}
 							// Gating signal: Same signal is used in contradictory ways in the same gate
 							if (j.first->tval == -1 or j.first->tval != a.tval) {
-								error("", "gating signal found in production rules {" + prs.nets[a.from].name.to_string() + (((a.tval == 1 and not a.bubble) or (a.tval != 1 and a.bubble)) ? "+" : "-") + " -> " + prs.nets[a.to].name.to_string() + "}", __FILE__, __LINE__);
+								error("", "gating signal found in production rules {" + prs.nets[a.from].name + (((a.tval == 1 and not a.bubble) or (a.tval != 1 and a.bubble)) ? "+" : "-") + " -> " + prs.nets[a.to].name + "}", __FILE__, __LINE__);
 							}
 						} else if (j.first->tval != a.tval) {
 							// If we found an overlapping arc with the opposite value,
@@ -312,7 +312,7 @@ void bubble::save_prs(production_rule_set *prs)
 		for (size_t j = 0; j < cycles[i].first.size(); j++) {
 			if (j != 0)
 				tempstr += ", ";
-			tempstr += prs->nets[cycles[i].first[j]].name.to_string();
+			tempstr += prs->nets[cycles[i].first[j]].name;
 		}
 		error("", "negative cycle found " + tempstr, __FILE__, __LINE__);
 	}

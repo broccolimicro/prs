@@ -30,7 +30,7 @@ size_t count_isochronic_bubbles(const bubble& b) {
 }
 
 bool is_inverted(const production_rule_set& prs, const std::string& signal_name) {
-	ucs::Net cmp = invert(ucs::Net(signal_name));
+	string cmp = invert(signal_name);
 	for (auto net = prs.nets.begin(); net != prs.nets.end(); net++) {
 		if (net->name == cmp and (
 			not net->gateOf[0].empty() or

@@ -29,7 +29,7 @@ enabled_transition::~enabled_transition() {
 }
 
 string enabled_transition::to_string(const production_rule_set *base) {
-	string result = export_expression(guard, *base).to_string() + "->" + base->nets[net].name.to_string();
+	string result = export_expression(guard, *base).to_string() + "->" + base->nets[net].name;
 	// Value encoding in asynchronous circuit notation:
 	// -1: Interference or instability (represented as ~)
 	// 0: Low logic level (represented as -)
@@ -543,13 +543,13 @@ void simulator::assume(boolean::cube assume) {
 void simulator::set(int net, int value, int strength, bool stable, deque<int> *q) {
 	// Check constraints and report errors if violated
 	if (base->require_stable and not stable and strength > 0) {
-		error("", "unstable rule " + base->nets[net].name.to_string() + (value == 1 ? "+" : (value == 0 ? "-" : "~")), __FILE__, __LINE__);
+		error("", "unstable rule " + base->nets[net].name + (value == 1 ? "+" : (value == 0 ? "-" : "~")), __FILE__, __LINE__);
 	}
 	if (base->require_noninterfering and stable and value == -1 and strength > 0) {
-		error("", "interference " + base->nets[net].name.to_string(), __FILE__, __LINE__);
+		error("", "interference " + base->nets[net].name, __FILE__, __LINE__);
 	}
 	if (base->require_driven and strength == 0 and net >= 0) {
-		error("", "floating node " + base->nets[net].name.to_string(), __FILE__, __LINE__);
+		error("", "floating node " + base->nets[net].name, __FILE__, __LINE__);
 	}
 
 	// Cancel any pending events for this net
@@ -587,15 +587,15 @@ void simulator::set(int net, int value, int strength, bool stable, deque<int> *q
 			}
 		}
 		if (not viol.empty()) {
-			error("", "non-adiabatic transition " + base->nets[net].name.to_string() + (value == 1 ? "+" : (value == 0 ? "-" : "~")), __FILE__, __LINE__);
+			error("", "non-adiabatic transition " + base->nets[net].name + (value == 1 ? "+" : (value == 0 ? "-" : "~")), __FILE__, __LINE__);
 			string msg = "{";
 			for (auto i = viol.begin(); i != viol.end(); i++) {
 				if (i != viol.begin()) {
 					msg += ", ";
 				}
-				string source_name = base->nets[base->devs[*i].source].name.to_string();
-				string gate_name = base->nets[net].name.to_string();
-				string drain_name = base->nets[base->devs[*i].drain].name.to_string();
+				string source_name = base->nets[base->devs[*i].source].name;
+				string gate_name = base->nets[net].name;
+				string drain_name = base->nets[base->devs[*i].drain].name;
 				msg += "@" + source_name + "&" + (value==0 ? "~" : "") + gate_name + "->" + drain_name + (base->devs[*i].driver==1 ? "+" : "-");
 			}
 			msg += "}";
@@ -719,9 +719,9 @@ void simulator::reset()
 	wait();
 
 	for (int i = 0; i < (int)base->nets.size(); i++) {
-		if (base->nets[i].name == ucs::Net("Reset")) {
+		if (base->nets[i].name == "Reset") {
 			set(i, 1);
-		} else if (base->nets[i].name == ucs::Net("_Reset")) {
+		} else if (base->nets[i].name == "_Reset") {
 			set(i, 0);
 		}
 	}
@@ -766,9 +766,9 @@ void simulator::wait()
 void simulator::run()
 {
 	for (int i = 0; i < (int)base->nets.size(); i++) {
-		if (base->nets[i].name == ucs::Net("Reset")) {
+		if (base->nets[i].name == "Reset") {
 			set(i, 0);
-		} else if (base->nets[i].name == ucs::Net("_Reset")) {
+		} else if (base->nets[i].name == "_Reset") {
 			set(i, 1);
 		}
 	}

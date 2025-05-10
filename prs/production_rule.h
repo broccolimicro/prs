@@ -76,14 +76,15 @@ struct device {
 // Can represent inputs, outputs, power rails, or internal nodes
 struct net {
 	net(bool keep=false);
-	net(ucs::Net name, bool keep=false, bool isIO=false);
+	net(string name, int region=0, bool keep=false, bool isIO=false);
 	~net();
 
 	// These arrays should include remote devices!
 	// Check if the device is remote by comparing the net id against the relevant
 	// gate, source, or drain id. If they are different, then the device is
 	// remote and the transition should be delayed.
-	ucs::Net name;
+	string name;
+	int region;
 
 	// indexed by device::threshold
 	array<vector<int>, 2> gateOf;    // Devices where this net connects to gate (by threshold)
@@ -108,8 +109,8 @@ struct net {
 	bool isNode() const;
 };
 
-ucs::Net invert(ucs::Net name);
-ucs::Net makeWeak(ucs::Net name);
+string invert(string name);
+string makeWeak(string name);
 
 // Main container class for a production rule set circuit model
 // Manages collections of nets and devices, implements circuit analysis
@@ -142,9 +143,9 @@ struct production_rule_set
 
 	int create(net n=net());
 
-	int netIndex(ucs::Net name) const;
-	int netIndex(ucs::Net name, bool define=false);
-	ucs::Net netAt(int uid) const;
+	int netIndex(string name) const;
+	int netIndex(string name, bool define=false);
+	string netAt(int uid) const;
 	int netCount() const;
 
 	vector<vector<int> > remote_groups() const;
