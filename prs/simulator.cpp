@@ -29,7 +29,7 @@ enabled_transition::~enabled_transition() {
 }
 
 string enabled_transition::to_string(const production_rule_set *base) {
-	string result = export_expression(guard, *base).to_string() + "->" + base->nets[net].name;
+	string result = export_expression(guard, *base).to_string() + "->" + base->netAt(net);
 	// Value encoding in asynchronous circuit notation:
 	// -1: Interference or instability (represented as ~)
 	// 0: Low logic level (represented as -)
@@ -126,6 +126,7 @@ simulator::queue::event* &simulator::at(int net) {
 // @param strength The driving strength
 // @param stable Whether this is a stable transition
 void simulator::schedule(uint64_t delay_max, boolean::cube assume, boolean::cube guard, int net, int value, int strength, bool stable) {
+	if (debug) cout << "scheduling " << export_expression(guard, *base).to_string() << "->" << base->netAt(net) << " " << value << "*" << strength << (stable ? "" : " unstable") << " {" << export_expression(assume, *base).to_string() << "}" << endl;
 	if (net >= (int)nets.size()) {
 		nets.resize(net+1, nullptr);
 	}
@@ -208,9 +209,27 @@ void simulator::propagate(deque<int> &q, int net, bool vacuous) {
 			q.push_back(base->devs[*i].drain);
 		}
 	}
+
+	// TODO(edward.bingham) before deleting the variable space, this put an
+	// implicit ordering on the evaluation of net propagation that evaluated
+	// nodes (uid < 0) before nets (uid >= 0). However, after deleting the
+	// variable space, nodes and nets are all mixed together and so this implicit
+	// evaluation constraint no longer holds. This exposes a bug that existed in
+	// the simulator where transient interference or floating values would create
+	// scheduled unstable events in conflict with the isochronic fork assumption
+	// inherent in cmos logic.
+
+	// The proper way to fix this would be to accumulate up the events to
+	// schedule during propagation, overwriting events earlier in the
+	// propagation, then schedule them as a batch. This will create a lot of
+	// churn, and therefore slow down the simulator. I should also make the
+	// node/net ordering explicit to get that speedup back.
 	
 	// Sort and deduplicate the queue to avoid evaluating the same net multiple times
-	sort(q.begin(), q.end());
+	sort(q.begin(), q.end(), [this](int a, int b) -> bool {
+		return (base->nets[a].isNode() and not base->nets[b].isNode())
+			or (base->nets[a].isNode() == base->nets[b].isNode() and a < b);
+	});
 	q.erase(unique(q.begin(), q.end()), q.end());
 }
 
@@ -230,7 +249,7 @@ void simulator::model(int i, bool reverse, boolean::cube &assume, boolean::cube 
 	if (not fail_assumption) {
 		// Collect all compatible assumptions
 		for (auto c = dev->attr.assume.cubes.begin(); c != dev->attr.assume.cubes.end(); c++) {
-			if (not are_mutex(encoding, *c)) {
+			if (not are_mutex(encoding.xoutnulls(), *c)) {
 				assume_action &= *c;
 			}
 		}
@@ -283,7 +302,7 @@ void simulator::model(int i, bool reverse, boolean::cube &assume, boolean::cube 
 		source_strength = 2;
 	}
 
-	if (debug) cout << "\t@" << base->nets[source].name << ":" << source_value-1 << "*" << source_strength << "&" << (dev->threshold==0 ? "~" : "") << base->nets[dev->gate].name << ":" << local_value << "->" << base->nets[drain].name << (dev->driver==0 ? "-" : "+") << "*" << drive_strength;
+	if (debug) cout << "\t@" << base->netAt(source) << ":" << source_value-1 << "*" << source_strength << "&" << (dev->threshold==0 ? "~" : "") << base->netAt(dev->gate) << ":" << local_value << "->" << base->netAt(drain) << (dev->driver==0 ? "-" : "+") << "*" << drive_strength;
 
 	// Main logic for transistor operation
 	// If gate value matches threshold (device is on) or gate is unknown but global is matching
@@ -302,7 +321,7 @@ void simulator::model(int i, bool reverse, boolean::cube &assume, boolean::cube 
 			} else {
 				// TODO(edward.bingham) weak instability?
 			}
-			if (debug) cout << "\tstronger " << value << "*" << drive_strength << endl;
+			if (debug) cout << "\tstronger " << (value-1) << "*" << drive_strength << endl;
 		} else if (not fail_assumption) /*if (drive_strength == source_strength)*/ {
 			// Equal strength devices - use bitwise AND to resolve
 			// This operation works because of how values are encoded:
@@ -312,9 +331,10 @@ void simulator::model(int i, bool reverse, boolean::cube &assume, boolean::cube 
 				delay_max = dev->attr.delay_max;
 			}
 			// TODO(edward.bingham) this might also cause instability
-			if (debug) cout << "\tdriven " << value << "*" << drive_strength << endl;
+			if (debug) cout << "\tdriven " << (value-1) << "*" << drive_strength << endl;
 		}
 		if (not fail_assumption and global_value != 2 and global_value != -1) {
+			if (debug) cout << "\tassume {" << export_expression(assume_action, *base).to_string() << "}" << endl;
 			guard.set(dev->gate, global_value);
 			assume &= assume_action;
 		}
@@ -330,13 +350,13 @@ void simulator::model(int i, bool reverse, boolean::cube &assume, boolean::cube 
 			if (dev->attr.delay_max < delay_max) {
 				delay_max = dev->attr.delay_max;
 			}
-			if (debug) cout << "\tstronger glitch " << glitch_value << "*" << glitch_strength  << endl;
+			if (debug) cout << "\tstronger glitch " << (glitch_value-1) << "*" << glitch_strength  << endl;
 		} else if (source_strength == glitch_strength) {
 			glitch_value &= source_value;
 			if (dev->attr.delay_max < delay_max) {
 				delay_max = dev->attr.delay_max;
 			}
-			if (debug) cout << "\tglitch " << glitch_value << "*" << glitch_strength << endl;
+			if (debug) cout << "\tglitch " << (glitch_value-1) << "*" << glitch_strength << endl;
 		} else {
 			if (debug) cout << "\tweaker" << endl;
 		}
@@ -372,7 +392,7 @@ void simulator::evaluate(deque<int> nets) {
 		boolean::cube assumed;
 		uint64_t delay_max = std::numeric_limits<uint64_t>::max();
 
-		if (debug) cout << "evaluating " << net << "/(" << base->nets.size() << ") " << base->nets[net].name << ":" << encoding.get(net) << (base->nets[net].keep ? " keep" : "") << endl;
+		if (debug) cout << "evaluating " << net << "/(" << base->nets.size() << ") " << base->netAt(net) << ":" << encoding.get(net) << (base->nets[net].keep ? " keep" : "") << endl;
 		for (int driver = 0; driver < 2; driver++) {
 			for (auto i = base->nets[net].drainOf[driver].begin(); i != base->nets[net].drainOf[driver].end(); i++) {
 				model(*i, false, assumed, guard, value, drive_strength, glitch_value, glitch_strength, delay_max);
@@ -474,7 +494,7 @@ enabled_transition simulator::fire(int net) {
 	at(t.net) = nullptr;
 	
 	if (debug) {
-		printf("firing %s->%s%c:%d%s {%s}\n", export_expression(t.guard, *base).to_string().c_str(), base->nets[t.net].name.c_str(), t.value == 0 ? '-' : (t.value == 1 ? '+' : '~'), t.strength, t.stable ? "" : " unstable", export_expression(t.assume, *base).to_string().c_str());
+		printf("firing %s->%s%c:%d%s {%s}\n", export_expression(t.guard, *base).to_string().c_str(), base->netAt(t.net).c_str(), t.value == 0 ? '-' : (t.value == 1 ? '+' : '~'), t.strength, t.stable ? "" : " unstable", export_expression(t.assume, *base).to_string().c_str());
 	}
 
 	if (t.value >= 0) {
@@ -543,13 +563,13 @@ void simulator::assume(boolean::cube assume) {
 void simulator::set(int net, int value, int strength, bool stable, deque<int> *q) {
 	// Check constraints and report errors if violated
 	if (base->require_stable and not stable and strength > 0) {
-		error("", "unstable rule " + base->nets[net].name + (value == 1 ? "+" : (value == 0 ? "-" : "~")), __FILE__, __LINE__);
+		error("", "unstable rule " + base->netAt(net) + (value == 1 ? "+" : (value == 0 ? "-" : "~")), __FILE__, __LINE__);
 	}
 	if (base->require_noninterfering and stable and value == -1 and strength > 0) {
-		error("", "interference " + base->nets[net].name, __FILE__, __LINE__);
+		error("", "interference " + base->netAt(net), __FILE__, __LINE__);
 	}
-	if (base->require_driven and strength == 0 and net >= 0) {
-		error("", "floating node " + base->nets[net].name, __FILE__, __LINE__);
+	if (base->require_driven and strength == 0 and not base->nets[net].isNode()) {
+		error("", "floating node " + base->netAt(net), __FILE__, __LINE__);
 	}
 
 	// Cancel any pending events for this net
@@ -587,15 +607,15 @@ void simulator::set(int net, int value, int strength, bool stable, deque<int> *q
 			}
 		}
 		if (not viol.empty()) {
-			error("", "non-adiabatic transition " + base->nets[net].name + (value == 1 ? "+" : (value == 0 ? "-" : "~")), __FILE__, __LINE__);
+			error("", "non-adiabatic transition " + base->netAt(net) + (value == 1 ? "+" : (value == 0 ? "-" : "~")), __FILE__, __LINE__);
 			string msg = "{";
 			for (auto i = viol.begin(); i != viol.end(); i++) {
 				if (i != viol.begin()) {
 					msg += ", ";
 				}
-				string source_name = base->nets[base->devs[*i].source].name;
-				string gate_name = base->nets[net].name;
-				string drain_name = base->nets[base->devs[*i].drain].name;
+				string source_name = base->netAt(base->devs[*i].source);
+				string gate_name = base->netAt(net);
+				string drain_name = base->netAt(base->devs[*i].drain);
 				msg += "@" + source_name + "&" + (value==0 ? "~" : "") + gate_name + "->" + drain_name + (base->devs[*i].driver==1 ? "+" : "-");
 			}
 			msg += "}";
@@ -719,9 +739,9 @@ void simulator::reset()
 	wait();
 
 	for (int i = 0; i < (int)base->nets.size(); i++) {
-		if (base->nets[i].name == "Reset") {
+		if (base->netAt(i) == "Reset") {
 			set(i, 1);
-		} else if (base->nets[i].name == "_Reset") {
+		} else if (base->netAt(i) == "_Reset") {
 			set(i, 0);
 		}
 	}
@@ -766,9 +786,9 @@ void simulator::wait()
 void simulator::run()
 {
 	for (int i = 0; i < (int)base->nets.size(); i++) {
-		if (base->nets[i].name == "Reset") {
+		if (base->netAt(i) == "Reset") {
 			set(i, 0);
-		} else if (base->nets[i].name == "_Reset") {
+		} else if (base->netAt(i) == "_Reset") {
 			set(i, 1);
 		}
 	}
