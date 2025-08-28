@@ -8,13 +8,13 @@ prs::production_rule_set parse_prs_string(const std::string &prs_str) {
 	tokenizer tokens;
 	tokens.register_token<parse::block_comment>(false);
 	tokens.register_token<parse::line_comment>(false);
-	parse_prs::production_rule_set::register_syntax(tokens);
+	parse_prs::register_syntax(tokens);
 	
 	// Insert the string into the tokenizer
 	tokens.insert("string_input", prs_str, nullptr);
 	
 	tokens.increment(false);
-	tokens.expect<parse_prs::production_rule_set>();
+	parse_prs::expect(tokens);
 	if (tokens.decrement(__FILE__, __LINE__)) {
 		parse_prs::production_rule_set syntax(tokens);
 		import_production_rule_set(syntax, prs, -1, -1, prs::attributes(), 0, &tokens, true);
@@ -25,11 +25,9 @@ prs::production_rule_set parse_prs_string(const std::string &prs_str) {
 
 phy::Tech create_test_tech() {
     // Create a minimal Tech structure sufficient for PRS testing
-    phy::Tech tech;
+    phy::Tech tech("test_tech", "test");
     
     // Basic settings
-    tech.path = "test_tech";
-    tech.lib = "test";
     tech.dbunit = 1.0;
     tech.scale = 1.0;
     

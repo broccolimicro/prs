@@ -7,7 +7,7 @@
 
 #include <phy/Tech.h>
 #include <prs/production_rule.h>
-#include <parse_prs/production_rule.h>
+#include <parse_prs/factory.h>
 #include <interpret_prs/import.h>
 
 namespace test {
