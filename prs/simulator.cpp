@@ -3,6 +3,7 @@
 #include <common/math.h>
 #include <interpret_boolean/export.h>
 #include <stdio.h>
+#include "expression.h"
 
 namespace prs {
 
@@ -29,7 +30,7 @@ enabled_transition::~enabled_transition() {
 }
 
 string enabled_transition::to_string(const production_rule_set *base) {
-	string result = export_expression(guard, *base).to_string() + "->" + base->netAt(net);
+	string result = emit_expression(guard, *base) + "->" + base->netAt(net);
 	// Value encoding in asynchronous circuit notation:
 	// -1: Interference or instability (represented as ~)
 	// 0: Low logic level (represented as -)
@@ -55,7 +56,7 @@ string enabled_transition::to_string(const production_rule_set *base) {
 	}
 
 	if (not assume.is_tautology()) {
-		result += " {" + export_expression(assume, *base).to_string() + "}";
+		result += " {" + emit_expression(assume, *base) + "}";
 	}
 
 	return result;
@@ -126,7 +127,7 @@ simulator::queue::event* &simulator::at(int net) {
 // @param strength The driving strength
 // @param stable Whether this is a stable transition
 void simulator::schedule(uint64_t delay_max, boolean::cube assume, boolean::cube guard, int net, int value, int strength, bool stable) {
-	if (debug) cout << "scheduling " << export_expression(guard, *base).to_string() << "->" << base->netAt(net) << " " << value << "*" << strength << (stable ? "" : " unstable") << " {" << export_expression(assume, *base).to_string() << "}" << endl;
+	if (debug) cout << "scheduling " << emit_expression(guard, *base) << "->" << base->netAt(net) << " " << value << "*" << strength << (stable ? "" : " unstable") << " {" << emit_expression(assume, *base) << "}" << endl;
 	if (net >= (int)nets.size()) {
 		nets.resize(net+1, nullptr);
 	}
@@ -240,7 +241,7 @@ void simulator::model(int i, bool reverse, boolean::cube &assume, boolean::cube 
 	// If they conflict, this device is disabled by its assumptions
 	bool fail_assumption = are_mutex(global.xoutnulls(), dev->attr.assume);
 	if (debug and fail_assumption) {
-		cout << "\tfailed assumption " << export_composition(global, *base).to_string() << " & " << export_expression(dev->attr.assume, *base).to_string() << endl;
+		cout << "\tfailed assumption " << emit_composition(global, *base) << " & " << emit_expression(dev->attr.assume, *base) << endl;
 	}
 	
 	// Apply assumptions to the observed state
@@ -334,7 +335,7 @@ void simulator::model(int i, bool reverse, boolean::cube &assume, boolean::cube 
 			if (debug) cout << "\tdriven " << (value-1) << "*" << drive_strength << endl;
 		}
 		if (not fail_assumption and global_value != 2 and global_value != -1) {
-			if (debug) cout << "\tassume {" << export_expression(assume_action, *base).to_string() << "}" << endl;
+			if (debug) cout << "\tassume {" << emit_expression(assume_action, *base) << "}" << endl;
 			guard.set(dev->gate, global_value);
 			assume &= assume_action;
 		}
@@ -494,7 +495,7 @@ enabled_transition simulator::fire(int net) {
 	at(t.net) = nullptr;
 	
 	if (debug) {
-		printf("firing %s->%s%c:%d%s {%s}\n", export_expression(t.guard, *base).to_string().c_str(), base->netAt(t.net).c_str(), t.value == 0 ? '-' : (t.value == 1 ? '+' : '~'), t.strength, t.stable ? "" : " unstable", export_expression(t.assume, *base).to_string().c_str());
+		printf("firing %s->%s%c:%d%s {%s}\n", emit_expression(t.guard, *base).c_str(), base->netAt(t.net).c_str(), t.value == 0 ? '-' : (t.value == 1 ? '+' : '~'), t.strength, t.stable ? "" : " unstable", emit_expression(t.assume, *base).c_str());
 	}
 
 	if (t.value >= 0) {

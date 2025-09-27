@@ -1,5 +1,5 @@
 NAME          = prs
-DEPEND        = sch phy boolean interpret_boolean parse_expression parse_ucs parse common
+DEPEND        = sch phy boolean interpret_boolean parse_prs parse_expression parse_ucs parse common
 TEST_DEPEND   = interpret_prs interpret_boolean parse_prs parse_spice parse_dot parse_expression parse_ucs parse sch phy boolean common
 
 COVERAGE ?= 0

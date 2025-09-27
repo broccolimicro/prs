@@ -3,6 +3,7 @@
 #include <common/message.h>
 #include <common/timer.h>
 #include <interpret_boolean/export.h>
+#include "expression.h"
 
 // This file implements the core data structures and algorithms for representing, analyzing,
 // and manipulating production rule sets (PRS). A production rule set describes logical
@@ -176,7 +177,7 @@ void production_rule_set::print() const {
 
 	cout << "devs " << devs.size() << endl;
 	for (int i = 0; i < (int)devs.size(); i++) {
-		cout << "dev " << i << ": source=" << netAt(devs[i].source) << "(" << devs[i].source << ") gate=" << netAt(devs[i].gate) << "(" << devs[i].gate << ") drain=" << netAt(devs[i].drain) << "(" << devs[i].drain << ") threshold=" << devs[i].threshold << " driver=" << devs[i].driver << (not devs[i].attr.assume.is_tautology() ? " {" + export_expression(devs[i].attr.assume, *this).to_string() + "}" : "") << (devs[i].attr.weak ? " weak" : "") << (devs[i].attr.force ? " force" : "") << (devs[i].attr.pass ? " pass" : "") << " after=" << devs[i].attr.delay_max << " size=" << devs[i].attr.size << " variant=" << devs[i].attr.variant << endl;
+		cout << "dev " << i << ": source=" << netAt(devs[i].source) << "(" << devs[i].source << ") gate=" << netAt(devs[i].gate) << "(" << devs[i].gate << ") drain=" << netAt(devs[i].drain) << "(" << devs[i].drain << ") threshold=" << devs[i].threshold << " driver=" << devs[i].driver << (not devs[i].attr.assume.is_tautology() ? " {" + emit_expression(devs[i].attr.assume, *this) + "}" : "") << (devs[i].attr.weak ? " weak" : "") << (devs[i].attr.force ? " force" : "") << (devs[i].attr.pass ? " pass" : "") << " after=" << devs[i].attr.delay_max << " size=" << devs[i].attr.size << " variant=" << devs[i].attr.variant << endl;
 	}
 
 	cout << "power " << pwr.size() << endl;
