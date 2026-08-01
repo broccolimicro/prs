@@ -1,7 +1,6 @@
 #include "bubble.h"
 #include <common/message.h>
 #include <common/text.h>
-#include <interpret_boolean/export.h>
 
 // The bubble reshuffling algorithm solves a key problem in asynchronous circuit implementation:
 // making circuits with isochronic forks CMOS-implementable by moving signal inversions ("bubbles")

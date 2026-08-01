@@ -23,7 +23,7 @@ TEST(SynthesizeTest, RoundTripTest) {
 	prs.print();
 	Tech tech = create_test_tech();
 
-	string initial_str = export_production_rule_set(prs).to_string();
+	string initial_str = parse_prs::export_production_rule_set(prs).to_string();
 	cout << initial_str << endl;
 	EXPECT_EQ(initial_str, prs_str);
 
@@ -35,7 +35,7 @@ TEST(SynthesizeTest, RoundTripTest) {
 	production_rule_set extracted_prs = extract_rules(tech, ckt);
 	extracted_prs.print();
 
-	string exported_str = export_production_rule_set(extracted_prs).to_string();
+	string exported_str = parse_prs::export_production_rule_set(extracted_prs).to_string();
 	cout << exported_str << endl;
 
 	EXPECT_EQ(exported_str, target_prs_str);

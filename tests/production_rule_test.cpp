@@ -84,7 +84,7 @@ _Reset&L.t&R.e->v3- [keep]
 	EXPECT_FALSE(prs.assume_static);
 
 	// Re-export the production rule set and compare to original
-	parse_prs::production_rule_set exported_prs = export_production_rule_set(prs);
+	parse_prs::production_rule_set exported_prs = parse_prs::export_production_rule_set(prs);
 	string exported_str = exported_prs.to_string();
 	
 	EXPECT_EQ(target_str, exported_str);
